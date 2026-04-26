@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"cwxu-algo/app/agent/internal/agent"
 	"cwxu-algo/app/agent/internal/agent/tool/core_data"
 	data2 "cwxu-algo/app/agent/internal/agent/tool/data"
@@ -11,11 +12,15 @@ import (
 	"fmt"
 	"time"
 
+	profile2 "cwxu-algo/api/user/v1/profile"
+
 	"github.com/go-kratos/kratos/v2/log"
 	"github.com/go-kratos/kratos/v2/registry"
+	"github.com/go-kratos/kratos/v2/transport/grpc"
 	"github.com/redis/go-redis/v9"
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
 	"github.com/volcengine/volcengine-go-sdk/volcengine"
+	grpc2 "google.golang.org/grpc"
 )
 
 type SummaryUseCase struct {
@@ -40,6 +45,9 @@ func (uc *SummaryUseCase) PersonalLastDay(userId int64) error {
 	lastDay := time.Now()
 	lastDay = lastDay.AddDate(0, 0, -1)
 	if userId == 23 {
+		if time.Now().Weekday() == time.Monday {
+			return uc.WeeklyReportForCoach(userId)
+		}
 		return nil
 	}
 	startDate := lastDay.Format("20060102")
@@ -102,6 +110,102 @@ func (uc *SummaryUseCase) PersonalRecent(userId int64) error {
 		},
 	}
 	r, _ := chat.Chat(msg, core_data.NewStatisticPeriod(uc.reg), data2.NewRedisSet(uc.redis))
+	log.Info(r)
+	return nil
+}
+
+func (uc *SummaryUseCase) userRPC() (*grpc2.ClientConn, error) {
+	return grpc.DialInsecure(
+		context.Background(),
+		grpc.WithEndpoint("discovery:///user"),
+		grpc.WithDiscovery((*uc.reg).(registry.Discovery)),
+		grpc.WithTimeout(20*time.Second),
+	)
+}
+
+func (uc *SummaryUseCase) getUserIds() []int64 {
+	userRpc, err := uc.userRPC()
+	if err != nil {
+		return make([]int64, 0)
+	}
+	defer userRpc.Close()
+	profile := profile2.NewProfileClient(userRpc)
+	getUsers := func(pageNum int) (*profile2.GetListRes, error) {
+		return profile.GetList(context.Background(), &profile2.GetListReq{
+			PageSize: 100,
+			PageNum:  int64(pageNum),
+		})
+	}
+	res, err := getUsers(1)
+	if err != nil {
+		return make([]int64, 0)
+	}
+	rList := []*profile2.GetListRes{res}
+	totalPage := (res.Total + 99) / 100
+	for i := 2; i <= int(totalPage); i++ {
+		r, err := getUsers(i)
+		if err != nil {
+			continue
+		}
+		rList = append(rList, r)
+	}
+	var userIds []int64
+	for _, v := range rList {
+		for _, u := range v.List {
+			userIds = append(userIds, int64(u.UserId))
+		}
+	}
+	return userIds
+}
+
+func (uc *SummaryUseCase) WeeklyReportForCoach(coachUserId int64) error {
+	chat := uc.chat
+	lastWeekStart := time.Now().AddDate(0, 0, -7).Format("20060102")
+	lastWeekEnd := time.Now().AddDate(0, 0, -1).Format("20060102")
+	msg := []*model.ChatCompletionMessage{
+		{
+			Role: model.ChatMessageRoleUser,
+			Content: &model.ChatCompletionMessageContent{
+				StringValue: volcengine.String(
+					"你是无锡学院算法协会的教练助手，要为教练生成一份上周团队周报。" +
+						"风格要符合Acmer心理，可爱活力，洋溢青春，校园风格。" +
+						"邮件主题要醒目，内容要简洁有力。" +
+						"需要用html格式输出，注意适配PC和移动端。" +
+						"所有提示词不允许出现在最终文本中。"),
+			},
+		},
+		{
+			Role: model.ChatMessageRoleUser,
+			Content: &model.ChatCompletionMessageContent{
+				StringValue: volcengine.String(fmt.Sprintf(
+					"我需要你帮我分析上周（周一到周日）的团队提交数据，生成一份周报给教练。"+
+						"教练的用户ID是%d，今天是%s。"+
+						"请先调用submit_cnt工具获取过去7天的全局提交数据(日期从%s到%s，userId=0表示全局)。"+
+						"然后调用statistic_period工具获取本周统计数据。"+
+						"基于这些数据，请生成包含以下内容的周报："+
+						"1. 本周团队总提交量，与上周对比（用箭头表示升降）"+
+						"2. Top 5 最活跃成员（按提交次数排名）"+
+						"3. 连续3天以上未提交的成员名单（需要重点关注）"+
+						"4. 本周AC数量最多的成员"+
+						"5. 对教练的建议：哪些成员需要鼓励，哪些需要鞭策"+
+						"6. 团队整体状态评语（用emoji表示状态：🔥积极、⚠️一般、❄️低迷）"+
+						"最后用send_email工具把这份周报发给教练，教练的邮箱需要通过get_profile_by_user_id获取。"+
+						"邮件标题格式：【算法协会周报】XX月XX日-XX月XX日",
+					coachUserId, time.Now().Format("2006年1月2日"), lastWeekStart, lastWeekEnd)),
+			},
+		},
+	}
+	emailTool := utils.NewSendEmail(
+		uc.mailConf.Host,
+		int(uc.mailConf.Port),
+		uc.mailConf.Username,
+		uc.mailConf.Password,
+		uc.mailConf.From)
+	r, _ := chat.Chat(msg,
+		core_data.NewSubmitCnt(uc.reg),
+		core_data.NewGetProfileById(uc.reg),
+		core_data.NewStatisticPeriod(uc.reg),
+		emailTool)
 	log.Info(r)
 	return nil
 }
