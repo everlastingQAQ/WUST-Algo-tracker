@@ -9,6 +9,7 @@ var (
 	AtCoder    = "AtCoder"
 	LuoGu      = "LuoGu"
 	CodeForces = "CodeForces"
+	QOJ        = "QOJ"
 )
 var registry = map[string]Provider{}
 

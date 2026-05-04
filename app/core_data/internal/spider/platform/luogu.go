@@ -25,7 +25,7 @@ type NewLuoGu struct {
 	lastUsed time.Time
 }
 
-func ocrImage(client *http.Client, url string, img []byte) (string, error) {
+func (lg *NewLuoGu) ocrImage(client *http.Client, url string, img []byte) (string, error) {
 	var buf bytes.Buffer
 	w := multipart.NewWriter(&buf)
 
@@ -54,7 +54,7 @@ func ocrImage(client *http.Client, url string, img []byte) (string, error) {
 	}
 	return string(b), nil
 }
-func doLogin(
+func (lg *NewLuoGu) doLogin(
 	client *http.Client,
 	url, username, password, captcha string,
 ) (success bool, body string, err error) {
@@ -83,7 +83,7 @@ func doLogin(
 	return true, body, nil
 }
 
-func login(username, password string) (*http.Client, error) {
+func (lg *NewLuoGu) login(username, password string) (*http.Client, error) {
 	const (
 		captchaURL = "https://www.luogu.com.cn/lg4/captcha"
 		ocrURL     = "https://api.alistgo.com/ocr/file"
@@ -106,13 +106,13 @@ func login(username, password string) (*http.Client, error) {
 			return nil, err
 		}
 		// 2. OCR 识别验证码
-		code, err := ocrImage(client, ocrURL, imgBytes)
+		code, err := lg.ocrImage(client, ocrURL, imgBytes)
 		if err != nil {
 			return nil, err
 		}
 		code = strings.TrimSpace(code)
 		// 3. 发起登录
-		ok, body, err := doLogin(client, loginURL, username, password, code)
+		ok, body, err := lg.doLogin(client, loginURL, username, password, code)
 		if err != nil {
 			return nil, err
 		}
@@ -153,7 +153,7 @@ type Record struct {
 	} `json:"problem"`
 }
 
-func parseLuoGuHTML(html string) (*Injection, error) {
+func (lg *NewLuoGu) parseLuoGuHTML(html string) (*Injection, error) {
 	// 抠 decodeURIComponent 里的字符串
 	re := regexp.MustCompile(`window\._feInjection\s*=\s*JSON\.parse\(decodeURIComponent\("(.+?)"\)\)`)
 	m := re.FindStringSubmatch(html)
@@ -215,7 +215,7 @@ func (lg *NewLuoGu) getClient() (*http.Client, error) {
 		return lg.client, nil
 	}
 
-	client, err := login("sanenchen", "sanenchen123")
+	client, err := lg.login("sanenchen", "sanenchen123")
 	if err != nil {
 		return nil, err
 	}
@@ -238,7 +238,7 @@ func (lg *NewLuoGu) FetchSubmitLog(userId int64, username string, needAll bool) 
 	rb, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
 	var subs []Record
-	inj, err := parseLuoGuHTML(string(rb))
+	inj, err := lg.parseLuoGuHTML(string(rb))
 	if err != nil {
 		return nil, err
 	}
@@ -252,7 +252,7 @@ func (lg *NewLuoGu) FetchSubmitLog(userId int64, username string, needAll bool) 
 			}
 			rb, _ := io.ReadAll(resp.Body)
 			resp.Body.Close()
-			inj, err := parseLuoGuHTML(string(rb))
+			inj, err := lg.parseLuoGuHTML(string(rb))
 			if err != nil {
 				return nil, err
 			}
