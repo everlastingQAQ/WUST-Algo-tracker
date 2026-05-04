@@ -259,7 +259,7 @@ func (q *NewQOJ) FetchSubmitLog(userId int64, username string, needAll bool) ([]
 
 			res = append(res, model.SubmitLog{
 				UserID:   userId,
-				Platform: "NewQOJ",
+				Platform: "QOJ",
 				SubmitID: submitID,
 				Problem:  problem,
 				Lang:     lang,
