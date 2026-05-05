@@ -25,6 +25,7 @@ func NewWhiteListMatcher() selector.MatchFunc {
 		"/api.user.v1.Profile/GetById":   "",
 		"/api.user.v1.Profile/GetByName": "",
 		"/api.user.v1.Profile/GetList":   "",
+		"/api.user.v1.Role/List":         "",
 		"/api.user.group.Group/Get":      "",
 		"/api.user.group.Group/List":     "",
 	}
