@@ -21,9 +21,12 @@ func Middleware(c *config.Middleware) (middleware.Middleware, error) {
 	return func(next http.RoundTripper) http.RoundTripper {
 		return middleware.RoundTripperFunc(func(request *http.Request) (*http.Response, error) {
 
-			if strings.Contains(request.RequestURI, "login") || strings.Contains(request.RequestURI, "register") {
-				// 如果是登陆 则放行
-				return next.RoundTrip(request)
+			// 公开接口放行
+			publicPaths := []string{"login", "register", "/v1/user/role/list"}
+			for _, p := range publicPaths {
+				if strings.Contains(request.RequestURI, p) {
+					return next.RoundTrip(request)
+				}
 			}
 			authHeader := request.Header.Get("Authorization")
 			tokenStr := strings.TrimPrefix(authHeader, "Bearer ")
