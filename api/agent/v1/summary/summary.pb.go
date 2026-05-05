@@ -2,7 +2,7 @@
 // versions:
 // 	protoc-gen-go v1.36.11
 // 	protoc        v6.33.1
-// source: api/agent/v1/summary/summary.proto
+// source: agent/v1/summary/summary.proto
 
 package summary
 
@@ -31,7 +31,7 @@ type GetSummaryRequest struct {
 
 func (x *GetSummaryRequest) Reset() {
 	*x = GetSummaryRequest{}
-	mi := &file_api_agent_v1_summary_summary_proto_msgTypes[0]
+	mi := &file_agent_v1_summary_summary_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -43,7 +43,7 @@ func (x *GetSummaryRequest) String() string {
 func (*GetSummaryRequest) ProtoMessage() {}
 
 func (x *GetSummaryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_agent_v1_summary_summary_proto_msgTypes[0]
+	mi := &file_agent_v1_summary_summary_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -56,7 +56,7 @@ func (x *GetSummaryRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetSummaryRequest.ProtoReflect.Descriptor instead.
 func (*GetSummaryRequest) Descriptor() ([]byte, []int) {
-	return file_api_agent_v1_summary_summary_proto_rawDescGZIP(), []int{0}
+	return file_agent_v1_summary_summary_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *GetSummaryRequest) GetUserId() int64 {
@@ -77,7 +77,7 @@ type GetSummaryReply struct {
 
 func (x *GetSummaryReply) Reset() {
 	*x = GetSummaryReply{}
-	mi := &file_api_agent_v1_summary_summary_proto_msgTypes[1]
+	mi := &file_agent_v1_summary_summary_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -89,7 +89,7 @@ func (x *GetSummaryReply) String() string {
 func (*GetSummaryReply) ProtoMessage() {}
 
 func (x *GetSummaryReply) ProtoReflect() protoreflect.Message {
-	mi := &file_api_agent_v1_summary_summary_proto_msgTypes[1]
+	mi := &file_agent_v1_summary_summary_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -102,7 +102,7 @@ func (x *GetSummaryReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetSummaryReply.ProtoReflect.Descriptor instead.
 func (*GetSummaryReply) Descriptor() ([]byte, []int) {
-	return file_api_agent_v1_summary_summary_proto_rawDescGZIP(), []int{1}
+	return file_agent_v1_summary_summary_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *GetSummaryReply) GetCode() int64 {
@@ -126,11 +126,11 @@ func (x *GetSummaryReply) GetResp() string {
 	return ""
 }
 
-var File_api_agent_v1_summary_summary_proto protoreflect.FileDescriptor
+var File_agent_v1_summary_summary_proto protoreflect.FileDescriptor
 
-const file_api_agent_v1_summary_summary_proto_rawDesc = "" +
+const file_agent_v1_summary_summary_proto_rawDesc = "" +
 	"\n" +
-	"\"api/agent/v1/summary/summary.proto\x12\x14api.agent.v1.summary\x1a\x1cgoogle/api/annotations.proto\"+\n" +
+	"\x1eagent/v1/summary/summary.proto\x12\x14api.agent.v1.summary\x1a\x1cgoogle/api/annotations.proto\"+\n" +
 	"\x11GetSummaryRequest\x12\x16\n" +
 	"\x06userId\x18\x01 \x01(\x03R\x06userId\"K\n" +
 	"\x0fGetSummaryReply\x12\x12\n" +
@@ -142,23 +142,23 @@ const file_api_agent_v1_summary_summary_proto_rawDesc = "" +
 	"\x14api.agent.v1.summaryP\x01Z&cwxu-algo/api/agent/v1/summary;summaryb\x06proto3"
 
 var (
-	file_api_agent_v1_summary_summary_proto_rawDescOnce sync.Once
-	file_api_agent_v1_summary_summary_proto_rawDescData []byte
+	file_agent_v1_summary_summary_proto_rawDescOnce sync.Once
+	file_agent_v1_summary_summary_proto_rawDescData []byte
 )
 
-func file_api_agent_v1_summary_summary_proto_rawDescGZIP() []byte {
-	file_api_agent_v1_summary_summary_proto_rawDescOnce.Do(func() {
-		file_api_agent_v1_summary_summary_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_api_agent_v1_summary_summary_proto_rawDesc), len(file_api_agent_v1_summary_summary_proto_rawDesc)))
+func file_agent_v1_summary_summary_proto_rawDescGZIP() []byte {
+	file_agent_v1_summary_summary_proto_rawDescOnce.Do(func() {
+		file_agent_v1_summary_summary_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_agent_v1_summary_summary_proto_rawDesc), len(file_agent_v1_summary_summary_proto_rawDesc)))
 	})
-	return file_api_agent_v1_summary_summary_proto_rawDescData
+	return file_agent_v1_summary_summary_proto_rawDescData
 }
 
-var file_api_agent_v1_summary_summary_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
-var file_api_agent_v1_summary_summary_proto_goTypes = []any{
+var file_agent_v1_summary_summary_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_agent_v1_summary_summary_proto_goTypes = []any{
 	(*GetSummaryRequest)(nil), // 0: api.agent.v1.summary.GetSummaryRequest
 	(*GetSummaryReply)(nil),   // 1: api.agent.v1.summary.GetSummaryReply
 }
-var file_api_agent_v1_summary_summary_proto_depIdxs = []int32{
+var file_agent_v1_summary_summary_proto_depIdxs = []int32{
 	0, // 0: api.agent.v1.summary.Summary.GetRecentSummary:input_type -> api.agent.v1.summary.GetSummaryRequest
 	1, // 1: api.agent.v1.summary.Summary.GetRecentSummary:output_type -> api.agent.v1.summary.GetSummaryReply
 	1, // [1:2] is the sub-list for method output_type
@@ -168,26 +168,26 @@ var file_api_agent_v1_summary_summary_proto_depIdxs = []int32{
 	0, // [0:0] is the sub-list for field type_name
 }
 
-func init() { file_api_agent_v1_summary_summary_proto_init() }
-func file_api_agent_v1_summary_summary_proto_init() {
-	if File_api_agent_v1_summary_summary_proto != nil {
+func init() { file_agent_v1_summary_summary_proto_init() }
+func file_agent_v1_summary_summary_proto_init() {
+	if File_agent_v1_summary_summary_proto != nil {
 		return
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_agent_v1_summary_summary_proto_rawDesc), len(file_api_agent_v1_summary_summary_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_agent_v1_summary_summary_proto_rawDesc), len(file_agent_v1_summary_summary_proto_rawDesc)),
 			NumEnums:      0,
 			NumMessages:   2,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
-		GoTypes:           file_api_agent_v1_summary_summary_proto_goTypes,
-		DependencyIndexes: file_api_agent_v1_summary_summary_proto_depIdxs,
-		MessageInfos:      file_api_agent_v1_summary_summary_proto_msgTypes,
+		GoTypes:           file_agent_v1_summary_summary_proto_goTypes,
+		DependencyIndexes: file_agent_v1_summary_summary_proto_depIdxs,
+		MessageInfos:      file_agent_v1_summary_summary_proto_msgTypes,
 	}.Build()
-	File_api_agent_v1_summary_summary_proto = out.File
-	file_api_agent_v1_summary_summary_proto_goTypes = nil
-	file_api_agent_v1_summary_summary_proto_depIdxs = nil
+	File_agent_v1_summary_summary_proto = out.File
+	file_agent_v1_summary_summary_proto_goTypes = nil
+	file_agent_v1_summary_summary_proto_depIdxs = nil
 }

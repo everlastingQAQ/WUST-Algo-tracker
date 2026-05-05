@@ -57,11 +57,13 @@ func (c *GetNameById) Description() *model.Tool {
 }
 
 func (c *GetNameById) AiInterface(jsonStr string) string {
-	scp := SubmitCntParms{}
-	if err := json.Unmarshal([]byte(jsonStr), &scp); err != nil {
+	var req struct {
+		UserId int `json:"userId"`
+	}
+	if err := json.Unmarshal([]byte(jsonStr), &req); err != nil {
 		return "参数错误"
 	}
-	res, err := c.Handle(scp.UserId)
+	res, err := c.Handle(req.UserId)
 	if err != nil {
 		return "查询失败" + err.Error()
 	}

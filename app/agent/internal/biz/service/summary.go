@@ -40,6 +40,11 @@ func NewSummaryUseCase(chat *agent.Chat, mailConf *conf.SMTP, reg *discovery.Reg
 }
 
 func (uc *SummaryUseCase) PersonalLastDay(userId int64) error {
+	// 检查用户是否开启了邮件发送
+	if !uc.checkEmailEnabled(userId) {
+		log.Infof("用户 %d 已关闭邮件发送，跳过", userId)
+		return nil
+	}
 	chat := uc.chat
 	// 获取昨天日期
 	lastDay := time.Now()
@@ -89,6 +94,11 @@ func (uc *SummaryUseCase) PersonalLastDay(userId int64) error {
 }
 
 func (uc *SummaryUseCase) PersonalRecent(userId int64) error {
+	// 检查用户是否开启了邮件发送
+	if !uc.checkEmailEnabled(userId) {
+		log.Infof("用户 %d 已关闭邮件发送，跳过", userId)
+		return nil
+	}
 	chat := uc.chat
 	msg := []*model.ChatCompletionMessage{
 		{
@@ -121,6 +131,21 @@ func (uc *SummaryUseCase) userRPC() (*grpc2.ClientConn, error) {
 		grpc.WithDiscovery((*uc.reg).(registry.Discovery)),
 		grpc.WithTimeout(20*time.Second),
 	)
+}
+
+// checkEmailEnabled 检查用户是否开启了邮件发送
+func (uc *SummaryUseCase) checkEmailEnabled(userId int64) bool {
+	conn, err := uc.userRPC()
+	if err != nil {
+		return true // 默认允许，防止误杀
+	}
+	defer conn.Close()
+	p := profile2.NewProfileClient(conn)
+	res, err := p.GetById(context.Background(), &profile2.GetByIdReq{UserId: userId})
+	if err != nil {
+		return true
+	}
+	return res.EmailEnabled
 }
 
 func (uc *SummaryUseCase) getUserIds() []int64 {
@@ -159,6 +184,11 @@ func (uc *SummaryUseCase) getUserIds() []int64 {
 }
 
 func (uc *SummaryUseCase) WeeklyReportForCoach(coachUserId int64) error {
+	// 检查教练是否开启了邮件发送
+	if !uc.checkEmailEnabled(coachUserId) {
+		log.Infof("教练 %d 已关闭邮件发送，跳过周报", coachUserId)
+		return nil
+	}
 	chat := uc.chat
 	lastWeekStart := time.Now().AddDate(0, 0, -7).Format("20060102")
 	lastWeekEnd := time.Now().AddDate(0, 0, -1).Format("20060102")

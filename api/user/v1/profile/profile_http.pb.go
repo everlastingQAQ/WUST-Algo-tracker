@@ -23,6 +23,7 @@ const OperationProfileGetById = "/api.user.v1.Profile/GetById"
 const OperationProfileGetByName = "/api.user.v1.Profile/GetByName"
 const OperationProfileGetList = "/api.user.v1.Profile/GetList"
 const OperationProfileMoveGroup = "/api.user.v1.Profile/MoveGroup"
+const OperationProfileSetEmailEnabled = "/api.user.v1.Profile/SetEmailEnabled"
 const OperationProfileUpdate = "/api.user.v1.Profile/Update"
 
 type ProfileHTTPServer interface {
@@ -30,6 +31,7 @@ type ProfileHTTPServer interface {
 	GetByName(context.Context, *GetByNameReq) (*GetByNameRes, error)
 	GetList(context.Context, *GetListReq) (*GetListRes, error)
 	MoveGroup(context.Context, *MoveGroupReq) (*MoveGroupRes, error)
+	SetEmailEnabled(context.Context, *SetEmailEnabledReq) (*SetEmailEnabledRes, error)
 	Update(context.Context, *UpdateReq) (*UpdateRes, error)
 }
 
@@ -40,6 +42,7 @@ func RegisterProfileHTTPServer(s *http.Server, srv ProfileHTTPServer) {
 	r.GET("/v1/user/profile/list", _Profile_GetList0_HTTP_Handler(srv))
 	r.POST("/v1/user/profile/update", _Profile_Update2_HTTP_Handler(srv))
 	r.POST("/v1/user/profile/move-group", _Profile_MoveGroup0_HTTP_Handler(srv))
+	r.POST("/v1/user/profile/set-email-enabled", _Profile_SetEmailEnabled0_HTTP_Handler(srv))
 }
 
 func _Profile_GetById0_HTTP_Handler(srv ProfileHTTPServer) func(ctx http.Context) error {
@@ -143,11 +146,34 @@ func _Profile_MoveGroup0_HTTP_Handler(srv ProfileHTTPServer) func(ctx http.Conte
 	}
 }
 
+func _Profile_SetEmailEnabled0_HTTP_Handler(srv ProfileHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in SetEmailEnabledReq
+		if err := ctx.Bind(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationProfileSetEmailEnabled)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.SetEmailEnabled(ctx, req.(*SetEmailEnabledReq))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*SetEmailEnabledRes)
+		return ctx.Result(200, reply)
+	}
+}
+
 type ProfileHTTPClient interface {
 	GetById(ctx context.Context, req *GetByIdReq, opts ...http.CallOption) (rsp *GetByIdRes, err error)
 	GetByName(ctx context.Context, req *GetByNameReq, opts ...http.CallOption) (rsp *GetByNameRes, err error)
 	GetList(ctx context.Context, req *GetListReq, opts ...http.CallOption) (rsp *GetListRes, err error)
 	MoveGroup(ctx context.Context, req *MoveGroupReq, opts ...http.CallOption) (rsp *MoveGroupRes, err error)
+	SetEmailEnabled(ctx context.Context, req *SetEmailEnabledReq, opts ...http.CallOption) (rsp *SetEmailEnabledRes, err error)
 	Update(ctx context.Context, req *UpdateReq, opts ...http.CallOption) (rsp *UpdateRes, err error)
 }
 
@@ -203,6 +229,19 @@ func (c *ProfileHTTPClientImpl) MoveGroup(ctx context.Context, in *MoveGroupReq,
 	pattern := "/v1/user/profile/move-group"
 	path := binding.EncodeURL(pattern, in, false)
 	opts = append(opts, http.Operation(OperationProfileMoveGroup))
+	opts = append(opts, http.PathTemplate(pattern))
+	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (c *ProfileHTTPClientImpl) SetEmailEnabled(ctx context.Context, in *SetEmailEnabledReq, opts ...http.CallOption) (*SetEmailEnabledRes, error) {
+	var out SetEmailEnabledRes
+	pattern := "/v1/user/profile/set-email-enabled"
+	path := binding.EncodeURL(pattern, in, false)
+	opts = append(opts, http.Operation(OperationProfileSetEmailEnabled))
 	opts = append(opts, http.PathTemplate(pattern))
 	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
 	if err != nil {

@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-http v2.9.2
 // - protoc             v6.33.1
-// source: api/core/v1/contest_log/contest.proto
+// source: core/v1/contest_log/contest.proto
 
 package contest_log
 

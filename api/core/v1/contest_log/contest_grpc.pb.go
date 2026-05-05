@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.6.1
 // - protoc             v6.33.1
-// source: api/core/v1/contest_log/contest.proto
+// source: core/v1/contest_log/contest.proto
 
 package contest_log
 
@@ -203,5 +203,5 @@ var Contest_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "api/core/v1/contest_log/contest.proto",
+	Metadata: "core/v1/contest_log/contest.proto",
 }

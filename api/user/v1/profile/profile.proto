@@ -34,6 +34,12 @@ service Profile {
       body: "*",
     };
   }
+  rpc SetEmailEnabled (SetEmailEnabledReq) returns (SetEmailEnabledRes) {
+    option (google.api.http) = {
+      post: "/v1/user/profile/set-email-enabled",
+      body: "*",
+    };
+  }
 }
 
 message GetByIdReq {
@@ -47,6 +53,7 @@ message GetByIdRes {
   string email = 4;
   int64 groupId = 5;
   string avatar = 6;
+  bool emailEnabled = 8;
   message Spiders {
     string platform = 1;
     string username = 2;
@@ -103,6 +110,16 @@ message MoveGroupReq {
 }
 
 message MoveGroupRes {
+  int64 code = 1;
+  string message = 2;
+}
+
+message SetEmailEnabledReq {
+  int64 userId = 1;
+  bool enabled = 2;
+}
+
+message SetEmailEnabledRes {
   int64 code = 1;
   string message = 2;
 }

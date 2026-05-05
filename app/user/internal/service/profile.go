@@ -173,13 +173,14 @@ func (p *ProfileService) GetById(ctx context.Context, req *profile.GetByIdReq) (
 		})
 	}
 	return &profile.GetByIdRes{
-		UserId:   uint64(pf.ID),
-		Username: pf.Username,
-		Name:     pf.Name,
-		Email:    pf.Email,
-		Avatar:   pf.Avatar,
-		GroupId:  pf.GroupId,
-		Spiders:  spiders,
+		UserId:       uint64(pf.ID),
+		Username:     pf.Username,
+		Name:         pf.Name,
+		Email:        pf.Email,
+		Avatar:       pf.Avatar,
+		GroupId:      pf.GroupId,
+		Spiders:      spiders,
+		EmailEnabled: pf.EmailEnabled,
 	}, nil
 }
 
@@ -189,4 +190,21 @@ func NewProfileService(profileDal *dal.ProfileDal, reg *discovery.Register, prof
 		reg:            reg,
 		profileUseCase: profileUseCase,
 	}
+}
+
+// SetEmailEnabled 设置用户邮件发送开关
+func (p *ProfileService) SetEmailEnabled(ctx context.Context, req *profile.SetEmailEnabledReq) (*profile.SetEmailEnabledRes, error) {
+	if !auth.VerifyById(ctx, uint(req.UserId)) {
+		if !auth.VerifyAdmin(ctx) {
+			return nil, UpdateForbidden
+		}
+	}
+	err := p.profileDal.SetEmailEnabled(ctx, req.UserId, req.Enabled)
+	if err != nil {
+		return nil, errors.InternalServer("内部错误", err.Error())
+	}
+	return &profile.SetEmailEnabledRes{
+		Code:    0,
+		Message: "设置成功",
+	}, nil
 }

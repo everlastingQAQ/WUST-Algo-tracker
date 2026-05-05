@@ -84,3 +84,21 @@ func (d *ProfileDal) MoveGroup(ctx context.Context, userId uint64, groupId int64
 	}
 	return nil
 }
+
+// SetEmailEnabled 设置用户邮件发送开关
+func (d *ProfileDal) SetEmailEnabled(ctx context.Context, userId int64, enabled bool) error {
+	cacheKey := fmt.Sprintf("user:%d:profile", userId)
+	return data2.UpdateCacheDal(ctx, d.rdb, cacheKey, func() error {
+		return d.db.Model(&model.User{}).Where("id = ?", userId).Update("email_enabled", enabled).Error
+	})
+}
+
+// GetEmailEnabled 获取用户邮件发送开关
+func (d *ProfileDal) GetEmailEnabled(ctx context.Context, userId int64) (bool, error) {
+	var user model.User
+	err := d.db.Select("email_enabled").Where("id = ?", userId).First(&user).Error
+	if err != nil {
+		return true, err
+	}
+	return user.EmailEnabled, nil
+}
