@@ -853,6 +853,9 @@ components:
                     type: string
                 lastSubmit:
                     type: string
+                roleId:
+                    type: integer
+                    format: int32
         api.user.v1.LoginReq:
             type: object
             properties:

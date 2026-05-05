@@ -84,6 +84,15 @@ func GetCurrentUser(ctx context.Context) *JwtPayload {
 	return parsePayload(ctx)
 }
 
+// GetCurrentUserId 获取当前登录用户ID
+func GetCurrentUserId(ctx context.Context) uint {
+	pd := parsePayload(ctx)
+	if pd == nil {
+		return 0
+	}
+	return pd.UserID
+}
+
 // VerifyAdmin 校验是否为管理员（RoleID=RoleAdmin）
 func VerifyAdmin(ctx context.Context) bool {
 	pd := parsePayload(ctx)

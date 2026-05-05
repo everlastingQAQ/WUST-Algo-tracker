@@ -87,6 +87,7 @@ message GetListRes {
     int64 groupId = 5;
     string avatar = 6;
     string lastSubmit = 7;
+    int32 roleId = 8;
   }
   repeated List list = 1;
   int64 total = 2;

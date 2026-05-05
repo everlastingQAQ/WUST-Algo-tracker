@@ -117,6 +117,7 @@ func (p *ProfileService) GetList(ctx context.Context, req *profile.GetListReq) (
 			Name:       v.Name,
 			Avatar:     v.Avatar,
 			GroupId:    v.GroupId,
+			RoleId:     int32(v.RoleID),
 			LastSubmit: t,
 		})
 	}

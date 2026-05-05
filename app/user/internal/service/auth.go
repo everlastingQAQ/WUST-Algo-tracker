@@ -38,12 +38,17 @@ func (s *AuthService) Login(ctx context.Context, req *pb.LoginReq) (*pb.LoginRes
 	}
 	// 签发 JWT Token
 	expire := time.Now().Add(8640 * time.Hour) // 过期时间8640小时
-	jwtToken, err := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+	_roleIdsJSON := []byte("[0]")
+	if u.RoleID == 1 || u.RoleID == 2 {
+		_roleIdsJSON = []byte("[1]")
+	}
+	_jwtToken, err := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"userId":   u.ID,
 		"username": u.Username,
 		"name":     u.Name,
 		"email":    u.Email,
 		"roleId":   u.RoleID,
+		"roleIds":  string(_roleIdsJSON),
 		"exp":      expire.Unix(),
 		"nbf":      time.Now().Unix(),
 	}).SignedString([]byte(_const.JWTSecret))
@@ -54,7 +59,7 @@ func (s *AuthService) Login(ctx context.Context, req *pb.LoginReq) (*pb.LoginRes
 	}
 	res.Success = true
 	res.Message = "登录成功"
-	res.JwtToken = jwtToken
+	res.JwtToken = _jwtToken
 	return res, nil
 }
 
