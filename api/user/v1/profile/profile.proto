@@ -54,6 +54,7 @@ message GetByIdRes {
   int64 groupId = 5;
   string avatar = 6;
   bool emailEnabled = 8;
+  int32 roleId = 9;
   message Spiders {
     string platform = 1;
     string username = 2;

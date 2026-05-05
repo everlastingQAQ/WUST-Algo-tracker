@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"gorm.io/datatypes"
 
 	"gorm.io/gorm"
 )
@@ -44,7 +43,7 @@ func (s *AuthService) Login(ctx context.Context, req *pb.LoginReq) (*pb.LoginRes
 		"username": u.Username,
 		"name":     u.Name,
 		"email":    u.Email,
-		"roleIds":  u.RoleIDs,
+		"roleId":   u.RoleID,
 		"exp":      expire.Unix(),
 		"nbf":      time.Now().Unix(),
 	}).SignedString([]byte(_const.JWTSecret))
@@ -75,13 +74,13 @@ func (s *AuthService) Register(ctx context.Context, req *pb.RegisterReq) (res *p
 	}
 	// 尝试去注册
 	newUser := &model.User{
-		Username: req.Username,
-		Password: req.Password,
-		Avatar:   "",
-		Name:     req.Name,
-		Email:    req.Email,
-		GroupId:  req.GroupId,
-		RoleIDs:  datatypes.JSON("[0]"),
+		Username:     req.Username,
+		Password:     req.Password,
+		Avatar:       "",
+		Name:         req.Name,
+		Email:        req.Email,
+		GroupId:      req.GroupId,
+		RoleID:       0,
 	}
 	r := s.db.Create(&newUser)
 	if r.Error != nil {

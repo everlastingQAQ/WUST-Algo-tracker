@@ -124,12 +124,9 @@ func (p *ProfileService) GetList(ctx context.Context, req *profile.GetListReq) (
 }
 
 func (p *ProfileService) Update(ctx context.Context, req *profile.UpdateReq) (*profile.UpdateRes, error) {
-	// 校验JWT
-	if !auth.VerifyById(ctx, uint(req.UserId)) {
-		// 再次校验是不是管理员
-		if !auth.VerifyAdmin(ctx) {
-			return nil, UpdateForbidden
-		}
+	// 校验 JWT：只能修改自己，或者管理员可以修改任何人
+	if !auth.VerifySelfOrAbove(ctx, uint(req.UserId)) {
+		return nil, UpdateForbidden
 	}
 	// 构建 User
 	pro := model.User{
@@ -181,6 +178,7 @@ func (p *ProfileService) GetById(ctx context.Context, req *profile.GetByIdReq) (
 		GroupId:      pf.GroupId,
 		Spiders:      spiders,
 		EmailEnabled: pf.EmailEnabled,
+		RoleId:       int32(pf.RoleID),
 	}, nil
 }
 
@@ -194,10 +192,8 @@ func NewProfileService(profileDal *dal.ProfileDal, reg *discovery.Register, prof
 
 // SetEmailEnabled 设置用户邮件发送开关
 func (p *ProfileService) SetEmailEnabled(ctx context.Context, req *profile.SetEmailEnabledReq) (*profile.SetEmailEnabledRes, error) {
-	if !auth.VerifyById(ctx, uint(req.UserId)) {
-		if !auth.VerifyAdmin(ctx) {
-			return nil, UpdateForbidden
-		}
+	if !auth.VerifySelfOrAbove(ctx, uint(req.UserId)) {
+		return nil, UpdateForbidden
 	}
 	err := p.profileDal.SetEmailEnabled(ctx, req.UserId, req.Enabled)
 	if err != nil {

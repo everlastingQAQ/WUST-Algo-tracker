@@ -102,3 +102,11 @@ func (d *ProfileDal) GetEmailEnabled(ctx context.Context, userId int64) (bool, e
 	}
 	return user.EmailEnabled, nil
 }
+
+// SetRoleId 设置用户角色ID
+func (d *ProfileDal) SetRoleId(ctx context.Context, userId int64, roleId int) error {
+	cacheKey := fmt.Sprintf("user:%d:profile", userId)
+	return data2.UpdateCacheDal(ctx, d.rdb, cacheKey, func() error {
+		return d.db.Model(&model.User{}).Where("id = ?", userId).Update("role_id", roleId).Error
+	})
+}

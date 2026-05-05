@@ -77,8 +77,8 @@ func (s SpiderService) GetSpider(ctx context.Context, req *spider.GetSpiderReq) 
 }
 
 func (s SpiderService) SetSpider(ctx context.Context, req *spider.SetSpiderReq) (*spider.SetSpiderRep, error) {
-	// 校验JWT
-	if !auth.VerifyById(ctx, uint(req.UserId)) {
+	// 校验JWT：只能设置自己的 spider，或者管理员可以设置任何人
+	if !auth.VerifySelfOrAbove(ctx, uint(req.UserId)) {
 		return nil, SetForbidden
 	}
 	// Rate limit

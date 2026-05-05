@@ -75,6 +75,7 @@ type GetByIdRes struct {
 	GroupId       int64                  `protobuf:"varint,5,opt,name=groupId,proto3" json:"groupId,omitempty"`
 	Avatar        string                 `protobuf:"bytes,6,opt,name=avatar,proto3" json:"avatar,omitempty"`
 	EmailEnabled  bool                   `protobuf:"varint,8,opt,name=emailEnabled,proto3" json:"emailEnabled,omitempty"`
+	RoleId        int32                  `protobuf:"varint,9,opt,name=roleId,proto3" json:"roleId,omitempty"`
 	Spiders       []*GetByIdRes_Spiders  `protobuf:"bytes,7,rep,name=spiders,proto3" json:"spiders,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -157,6 +158,13 @@ func (x *GetByIdRes) GetEmailEnabled() bool {
 		return x.EmailEnabled
 	}
 	return false
+}
+
+func (x *GetByIdRes) GetRoleId() int32 {
+	if x != nil {
+		return x.RoleId
+	}
+	return 0
 }
 
 func (x *GetByIdRes) GetSpiders() []*GetByIdRes_Spiders {
@@ -881,7 +889,7 @@ const file_user_v1_profile_profile_proto_rawDesc = "" +
 	"\x1duser/v1/profile/profile.proto\x12\vapi.user.v1\x1a\x1cgoogle/api/annotations.proto\"$\n" +
 	"\n" +
 	"GetByIdReq\x12\x16\n" +
-	"\x06userId\x18\x01 \x01(\x03R\x06userId\"\xbe\x02\n" +
+	"\x06userId\x18\x01 \x01(\x03R\x06userId\"\xd6\x02\n" +
 	"\n" +
 	"GetByIdRes\x12\x16\n" +
 	"\x06userId\x18\x01 \x01(\x04R\x06userId\x12\x1a\n" +
@@ -890,7 +898,8 @@ const file_user_v1_profile_profile_proto_rawDesc = "" +
 	"\x05email\x18\x04 \x01(\tR\x05email\x12\x18\n" +
 	"\agroupId\x18\x05 \x01(\x03R\agroupId\x12\x16\n" +
 	"\x06avatar\x18\x06 \x01(\tR\x06avatar\x12\"\n" +
-	"\femailEnabled\x18\b \x01(\bR\femailEnabled\x129\n" +
+	"\femailEnabled\x18\b \x01(\bR\femailEnabled\x12\x16\n" +
+	"\x06roleId\x18\t \x01(\x05R\x06roleId\x129\n" +
 	"\aspiders\x18\a \x03(\v2\x1f.api.user.v1.GetByIdRes.SpidersR\aspiders\x1aA\n" +
 	"\aSpiders\x12\x1a\n" +
 	"\bplatform\x18\x01 \x01(\tR\bplatform\x12\x1a\n" +

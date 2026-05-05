@@ -457,6 +457,38 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.user.v1.UpdateRes'
+    /v1/user/role/list:
+        get:
+            tags:
+                - Role
+            description: 获取所有角色列表（所有人可访问）
+            operationId: Role_List
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.user.v1.role.ListRes'
+    /v1/user/role/set-user-role:
+        post:
+            tags:
+                - Role
+            description: 设置用户角色（仅管理员可调用）
+            operationId: Role_SetUserRole
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/api.user.v1.role.SetUserRoleReq'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.user.v1.role.SetUserRoleRes'
 components:
     schemas:
         api.agent.v1.summary.GetSummaryReply:
@@ -769,6 +801,9 @@ components:
                     type: string
                 emailEnabled:
                     type: boolean
+                roleId:
+                    type: integer
+                    format: int32
                 spiders:
                     type: array
                     items:
@@ -900,6 +935,37 @@ components:
                     type: string
                 message:
                     type: string
+        api.user.v1.role.ListRes:
+            type: object
+            properties:
+                roles:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/api.user.v1.role.RoleInfo'
+        api.user.v1.role.RoleInfo:
+            type: object
+            properties:
+                roleId:
+                    type: integer
+                    format: int32
+                name:
+                    type: string
+            description: 角色定义
+        api.user.v1.role.SetUserRoleReq:
+            type: object
+            properties:
+                userId:
+                    type: string
+                roleId:
+                    type: integer
+                    format: int32
+        api.user.v1.role.SetUserRoleRes:
+            type: object
+            properties:
+                code:
+                    type: string
+                message:
+                    type: string
 tags:
     - name: Auth
       description: Auth 认证服务
@@ -907,6 +973,8 @@ tags:
       description: 竞赛服务
     - name: Group
     - name: Profile
+    - name: Role
+      description: 角色服务：查看角色列表、设置用户角色
     - name: Spider
     - name: Statistic
     - name: Submit

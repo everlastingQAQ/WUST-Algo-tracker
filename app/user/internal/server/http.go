@@ -5,6 +5,7 @@ import (
 	"cwxu-algo/api/user/v1/auth"
 	"cwxu-algo/api/user/v1/group"
 	"cwxu-algo/api/user/v1/profile"
+	"cwxu-algo/api/user/v1/role"
 	"cwxu-algo/app/common/conf"
 	_const "cwxu-algo/app/common/const"
 	"cwxu-algo/app/user/internal/service"
@@ -42,6 +43,7 @@ func NewHTTPServer(
 	authService *service.AuthService,
 	profileService *service.ProfileService,
 	groupService *service.GroupService,
+	roleService *service.RoleService,
 	logger log.Logger,
 
 ) *http.Server {
@@ -66,5 +68,6 @@ func NewHTTPServer(
 	auth.RegisterAuthHTTPServer(srv, authService)
 	profile.RegisterProfileHTTPServer(srv, profileService)
 	group.RegisterGroupHTTPServer(srv, groupService)
+	role.RegisterRoleHTTPServer(srv, roleService)
 	return srv
 }

@@ -1,0 +1,46 @@
+syntax = "proto3";
+
+package api.user.v1.role;
+import "google/api/annotations.proto";
+option go_package = "cwxu-algo/api/user/v1/role;role";
+option java_multiple_files = true;
+option java_package = "api.user.v1.role";
+
+// 角色服务：查看角色列表、设置用户角色
+service Role {
+  // 获取所有角色列表（所有人可访问）
+  rpc List (ListReq) returns (ListRes) {
+    option (google.api.http) = {
+      get: "/v1/user/role/list"
+    };
+  }
+  // 设置用户角色（仅管理员可调用）
+  rpc SetUserRole (SetUserRoleReq) returns (SetUserRoleRes) {
+    option (google.api.http) = {
+      post: "/v1/user/role/set-user-role"
+      body: "*"
+    };
+  }
+}
+
+// 角色定义
+message RoleInfo {
+  int32 roleId = 1;    // 角色ID：0=普通用户 1=管理员 2=教练
+  string name = 2;     // 角色名称：普通用户/管理员/教练
+}
+
+message ListReq {}
+
+message ListRes {
+  repeated RoleInfo roles = 1;
+}
+
+message SetUserRoleReq {
+  int64 userId = 1;   // 目标用户ID
+  int32 roleId = 2;   // 要设置为的角色ID：0=普通用户 1=管理员 2=教练
+}
+
+message SetUserRoleRes {
+  int64 code = 1;
+  string message = 2;
+}

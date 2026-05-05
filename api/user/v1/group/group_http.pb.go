@@ -39,7 +39,7 @@ func RegisterGroupHTTPServer(s *http.Server, srv GroupHTTPServer) {
 	r.POST("/v1/user/group/delete", _Group_Delete0_HTTP_Handler(srv))
 	r.POST("/v1/user/group/update", _Group_Update1_HTTP_Handler(srv))
 	r.GET("/v1/user/group/get", _Group_Get0_HTTP_Handler(srv))
-	r.GET("/v1/user/group/list", _Group_List0_HTTP_Handler(srv))
+	r.GET("/v1/user/group/list", _Group_List1_HTTP_Handler(srv))
 }
 
 func _Group_Create0_HTTP_Handler(srv GroupHTTPServer) func(ctx http.Context) error {
@@ -127,7 +127,7 @@ func _Group_Get0_HTTP_Handler(srv GroupHTTPServer) func(ctx http.Context) error 
 	}
 }
 
-func _Group_List0_HTTP_Handler(srv GroupHTTPServer) func(ctx http.Context) error {
+func _Group_List1_HTTP_Handler(srv GroupHTTPServer) func(ctx http.Context) error {
 	return func(ctx http.Context) error {
 		var in ListRequest
 		if err := ctx.BindQuery(&in); err != nil {
