@@ -42,14 +42,13 @@ func (r *RoleService) SetUserRole(ctx context.Context, req *role.SetUserRoleReq)
 	if err != nil {
 		return nil, errors.InternalServer("内部错误", "用户不存在")
 	}
-	// 4. 权限等级检查：管理员只能操作 RoleID < 1 的用户
-	//    即只能设置普通用户(RoleID=0)和教练(RoleID=2)，不能设置另一个管理员
-	if targetUser.RoleID >= permission.RoleAdmin {
+	// 4. 禁止修改管理员本身（防止自己降自己）
+	if targetUser.RoleID == permission.RoleAdmin {
 		return nil, errors.Forbidden("权限不足", "无法修改管理员角色")
 	}
-	// 5. 不能将用户设置为比自己更高的权限（同级也不行，但管理员=1 所以0和2都小于1）
-	if int(req.RoleId) >= permission.RoleAdmin {
-		return nil, errors.Forbidden("权限不足", "无法设置高于管理员的角色")
+	// 5. 不能将用户设置为管理员（只有超级管理员才有第二个管理员，目前只有 RoleID=1 本身）
+	if req.RoleId == permission.RoleAdmin {
+		return nil, errors.Forbidden("权限不足", "无法授予管理员角色")
 	}
 	// 6. 执行更新
 	err = r.profileDal.SetRoleId(ctx, req.UserId, int(req.RoleId))
