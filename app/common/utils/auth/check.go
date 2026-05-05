@@ -84,12 +84,20 @@ func GetCurrentUser(ctx context.Context) *JwtPayload {
 	return parsePayload(ctx)
 }
 
-// VerifyAdmin 校验是否为管理员（RoleID=1）
+// VerifyAdmin 校验是否为管理员（RoleID=RoleAdmin）
 func VerifyAdmin(ctx context.Context) bool {
-	return VerifyMinRole(ctx, permission.RoleAdmin)
+	pd := parsePayload(ctx)
+	if pd == nil {
+		return false
+	}
+	return pd.RoleID == permission.RoleAdmin
 }
 
-// VerifyCoach 校验是否为教练（RoleID=2）
+// VerifyCoach 校验是否为教练（RoleID=RoleCoach）
 func VerifyCoach(ctx context.Context) bool {
-	return VerifyMinRole(ctx, permission.RoleCoach)
+	pd := parsePayload(ctx)
+	if pd == nil {
+		return false
+	}
+	return pd.RoleID == permission.RoleCoach
 }

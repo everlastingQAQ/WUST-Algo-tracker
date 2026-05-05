@@ -49,11 +49,24 @@ func (uc *SummaryUseCase) PersonalLastDay(userId int64) error {
 	// 获取昨天日期
 	lastDay := time.Now()
 	lastDay = lastDay.AddDate(0, 0, -1)
-	if userId == 23 {
+	roleId := uc.checkRoleId(userId)
+	// RoleID=2（教练）：周一发周报，其他日期跳过
+	// RoleID=1（管理员）：发日报 + 周一额外发周报（日报+周报双轨）
+	// RoleID=0（普通用户）：只发日报
+	if roleId == 2 {
 		if time.Now().Weekday() == time.Monday {
 			return uc.WeeklyReportForCoach(userId)
 		}
 		return nil
+	}
+	if roleId == 1 {
+		if time.Now().Weekday() == time.Monday {
+			// 管理员周一同时发日报 + 周报
+			if err := uc.WeeklyReportForCoach(userId); err != nil {
+				log.Errorf("管理员 %d 周报发送失败: %v", userId, err)
+			}
+		}
+		// 继续执行下方日报逻辑
 	}
 	startDate := lastDay.Format("20060102")
 	msg := []*model.ChatCompletionMessage{
@@ -133,19 +146,37 @@ func (uc *SummaryUseCase) userRPC() (*grpc2.ClientConn, error) {
 	)
 }
 
-// checkEmailEnabled 检查用户是否开启了邮件发送
-func (uc *SummaryUseCase) checkEmailEnabled(userId int64) bool {
+// userProfile 获取用户完整profile（内部复用RPC）
+func (uc *SummaryUseCase) userProfile(userId int64) *profile2.GetByIdRes {
 	conn, err := uc.userRPC()
 	if err != nil {
-		return true // 默认允许，防止误杀
+		return nil
 	}
 	defer conn.Close()
 	p := profile2.NewProfileClient(conn)
 	res, err := p.GetById(context.Background(), &profile2.GetByIdReq{UserId: userId})
 	if err != nil {
+		return nil
+	}
+	return res
+}
+
+// checkRoleId 获取用户角色ID
+func (uc *SummaryUseCase) checkRoleId(userId int64) int {
+	p := uc.userProfile(userId)
+	if p == nil {
+		return 0
+	}
+	return int(p.RoleId)
+}
+
+// checkEmailEnabled 检查用户是否开启了邮件发送
+func (uc *SummaryUseCase) checkEmailEnabled(userId int64) bool {
+	p := uc.userProfile(userId)
+	if p == nil {
 		return true
 	}
-	return res.EmailEnabled
+	return p.EmailEnabled
 }
 
 func (uc *SummaryUseCase) getUserIds() []int64 {
