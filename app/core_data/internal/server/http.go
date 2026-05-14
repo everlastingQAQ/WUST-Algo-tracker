@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"cwxu-algo/api/core/v1/bulletin"
 	"cwxu-algo/api/core/v1/contest_log"
 	"cwxu-algo/api/core/v1/spider"
 	statistic2 "cwxu-algo/api/core/v1/statistic"
@@ -20,12 +21,14 @@ import (
 
 func NewWhiteListMatcher() selector.MatchFunc {
 	whiteList := map[string]string{
-		"/api.core.v1.submit_log.Submit/GetSubmitLog":        "",
-		"/api.core.v1.contest_log.Contest/GetContestList":    "",
-		"/api.core.v1.contest_log.Contest/GetContestRanking": "",
-		"/api.core.v1.spider.Spider/GetSpider":               "",
-		"/api.core.v1.statistic.Statistic/Heatmap":           "",
-		"/api.core.v1.statistic.Statistic/PeriodCount":       "",
+		"/api.core.v1.submit_log.Submit/GetSubmitLog":         "",
+		"/api.core.v1.contest_log.Contest/GetContestList":     "",
+		"/api.core.v1.contest_log.Contest/GetContestRanking":  "",
+		"/api.core.v1.spider.Spider/GetSpider":                "",
+		"/api.core.v1.statistic.Statistic/Heatmap":            "",
+		"/api.core.v1.statistic.Statistic/PeriodCount":        "",
+		"/api.core.v1.bulletin.Bulletin/Get":                  "",
+		"/api.core.v1.bulletin.Bulletin/List":                 "",
 	}
 	return func(ctx context.Context, operation string) bool {
 		//log.Info(operation)
@@ -37,7 +40,7 @@ func NewWhiteListMatcher() selector.MatchFunc {
 }
 
 // NewHTTPServer new an HTTP server.
-func NewHTTPServer(c *conf.Server, logger log.Logger, submitService *service.SubmitLogService, spiderService *service.SpiderService, statisticService *service.StatisticService, contestLogService *service.ContestLogService) *http.Server {
+func NewHTTPServer(c *conf.Server, logger log.Logger, submitService *service.SubmitLogService, spiderService *service.SpiderService, statisticService *service.StatisticService, contestLogService *service.ContestLogService, bulletinService *service.BulletinService) *http.Server {
 	var opts = []http.ServerOption{
 		http.Middleware(
 			recovery.Recovery(),
@@ -60,5 +63,6 @@ func NewHTTPServer(c *conf.Server, logger log.Logger, submitService *service.Sub
 	spider.RegisterSpiderHTTPServer(srv, spiderService)
 	statistic2.RegisterStatisticHTTPServer(srv, statisticService)
 	contest_log.RegisterContestHTTPServer(srv, contestLogService)
+	bulletin.RegisterBulletinHTTPServer(srv, bulletinService)
 	return srv
 }

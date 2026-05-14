@@ -2,4 +2,4 @@ package dal
 
 import "github.com/google/wire"
 
-var ProviderSet = wire.NewSet(NewSpiderDal, NewStatisticDal)
+var ProviderSet = wire.NewSet(NewSpiderDal, NewStatisticDal, NewBulletinDal)

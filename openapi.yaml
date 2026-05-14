@@ -23,6 +23,102 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.agent.v1.summary.GetSummaryReply'
+    /v1/core/bulletin/create:
+        post:
+            tags:
+                - Bulletin
+            description: 创建公告（教练/管理员）
+            operationId: Bulletin_Create
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/api.core.v1.bulletin.CreateBulletinReq'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.core.v1.bulletin.CreateBulletinRes'
+    /v1/core/bulletin/delete:
+        delete:
+            tags:
+                - Bulletin
+            description: 删除公告（教练/管理员）
+            operationId: Bulletin_Delete
+            parameters:
+                - name: id
+                  in: query
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.core.v1.bulletin.DeleteBulletinRes'
+    /v1/core/bulletin/get:
+        get:
+            tags:
+                - Bulletin
+            description: 获取单条公告详情（公开）
+            operationId: Bulletin_Get
+            parameters:
+                - name: id
+                  in: query
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.core.v1.bulletin.GetBulletinRes'
+    /v1/core/bulletin/list:
+        get:
+            tags:
+                - Bulletin
+            description: 分页获取公告列表（公开）
+            operationId: Bulletin_List
+            parameters:
+                - name: page
+                  in: query
+                  schema:
+                    type: string
+                - name: pageSize
+                  in: query
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.core.v1.bulletin.ListBulletinRes'
+    /v1/core/bulletin/update:
+        post:
+            tags:
+                - Bulletin
+            description: 更新公告（教练/管理员）
+            operationId: Bulletin_Update
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/api.core.v1.bulletin.UpdateBulletinReq'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.core.v1.bulletin.UpdateBulletinRes'
     /v1/core/contest/history:
         get:
             tags:
@@ -500,6 +596,99 @@ components:
                     type: string
                 resp:
                     type: string
+        api.core.v1.bulletin.BulletinInfo:
+            type: object
+            properties:
+                id:
+                    type: string
+                title:
+                    type: string
+                content:
+                    type: string
+                authorId:
+                    type: string
+                authorName:
+                    type: string
+                isPinned:
+                    type: boolean
+                createdAt:
+                    type: string
+                updatedAt:
+                    type: string
+            description: 公告实体
+        api.core.v1.bulletin.CreateBulletinReq:
+            type: object
+            properties:
+                title:
+                    type: string
+                content:
+                    type: string
+                isPinned:
+                    type: boolean
+            description: 创建公告
+        api.core.v1.bulletin.CreateBulletinRes:
+            type: object
+            properties:
+                code:
+                    type: string
+                message:
+                    type: string
+                data:
+                    $ref: '#/components/schemas/api.core.v1.bulletin.BulletinInfo'
+        api.core.v1.bulletin.DeleteBulletinRes:
+            type: object
+            properties:
+                code:
+                    type: string
+                message:
+                    type: string
+        api.core.v1.bulletin.GetBulletinRes:
+            type: object
+            properties:
+                code:
+                    type: string
+                message:
+                    type: string
+                data:
+                    $ref: '#/components/schemas/api.core.v1.bulletin.BulletinInfo'
+        api.core.v1.bulletin.ListBulletinRes:
+            type: object
+            properties:
+                code:
+                    type: string
+                message:
+                    type: string
+                data:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/api.core.v1.bulletin.BulletinInfo'
+                total:
+                    type: string
+                page:
+                    type: string
+                pageSize:
+                    type: string
+        api.core.v1.bulletin.UpdateBulletinReq:
+            type: object
+            properties:
+                id:
+                    type: string
+                title:
+                    type: string
+                content:
+                    type: string
+                isPinned:
+                    type: boolean
+            description: 更新公告
+        api.core.v1.bulletin.UpdateBulletinRes:
+            type: object
+            properties:
+                code:
+                    type: string
+                message:
+                    type: string
+                data:
+                    $ref: '#/components/schemas/api.core.v1.bulletin.BulletinInfo'
         api.core.v1.contest_log.ContestLog:
             type: object
             properties:
@@ -972,6 +1161,8 @@ components:
 tags:
     - name: Auth
       description: Auth 认证服务
+    - name: Bulletin
+      description: 公告服务：管理员和教练可发布/编辑/删除公告，所有人可查看
     - name: Contest
       description: 竞赛服务
     - name: Group
