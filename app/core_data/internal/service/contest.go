@@ -77,16 +77,24 @@ func (c ContestLogService) GetContestRanking(ctx context.Context, req *contest_l
 		Time:        contest.Time.Unix(),
 	}
 
-	var userIds []int64
-	if req.GroupId != nil {
-		conn, err := c.userRPC()
-		if err != nil {
-			log.Errorf("userRPC failed: %v", err)
-			return nil, errors.InternalServer("内部服务器错误", "获取用户组信息失败")
-		}
+	// 建立到 user 服务的共享连接，避免 N+1 连接开销
+	conn, err := c.userRPC()
+	if err != nil {
+		log.Errorf("userRPC failed: %v", err)
+		// 连接失败降级：仍然返回排名数据，只是没有用户信息
+		conn = nil
+	} else {
 		defer conn.Close()
-		sb := profile.NewProfileClient(conn)
-		res, err := sb.GetUserIdsByGroup(ctx, &profile.GetUserIdsByGroupReq{GroupId: *req.GroupId})
+	}
+
+	var userClient profile.ProfileClient
+	if conn != nil {
+		userClient = profile.NewProfileClient(conn)
+	}
+
+	var userIds []int64
+	if req.GroupId != nil && userClient != nil {
+		res, err := userClient.GetUserIdsByGroup(ctx, &profile.GetUserIdsByGroupReq{GroupId: *req.GroupId})
 		if err != nil {
 			log.Errorf("GetUserIdsByGroup failed: %v", err)
 			return nil, errors.InternalServer("内部服务器错误", "获取用户组信息失败")
@@ -108,41 +116,17 @@ func (c ContestLogService) GetContestRanking(ctx context.Context, req *contest_l
 		return nil, errors.InternalServer("内部服务器错误", err.Error())
 	}
 
+	// 批量获取用户信息，一次 RPC 替代原来的 N 次 GetById
+	nameMap := c.fetchUserNames(ctx, userClient, logs)
+
 	items := make([]*contest_log.RankingItem, 0, len(logs))
-	type user struct {
-		Avatar string
-		Name   string
-	}
-	nameMap := map[int64]user{}
 	for _, v := range logs {
-		if _, ok := nameMap[v.UserID]; !ok {
-			conn, err := c.userRPC()
-			if err != nil {
-				log.Errorf("userRPC failed: %v", err)
-				nameMap[v.UserID] = user{}
-			} else {
-				defer conn.Close()
-				sb := profile.NewProfileClient(conn)
-				res, err := sb.GetById(
-					context.Background(),
-					&profile.GetByIdReq{UserId: v.UserID},
-				)
-				if err != nil {
-					log.Errorf("GetById failed: %v", err)
-					nameMap[v.UserID] = user{}
-				} else {
-					nameMap[v.UserID] = user{
-						Avatar: res.Avatar,
-						Name:   res.Name,
-					}
-				}
-			}
-		}
+		u := nameMap[v.UserID]
 		items = append(items, &contest_log.RankingItem{
 			Rank:       int64(v.Rank),
 			UserId:     v.UserID,
-			Name:       nameMap[v.UserID].Name,
-			Avatar:     nameMap[v.UserID].Avatar,
+			Name:       u.Name,
+			Avatar:     u.Avatar,
 			AcCount:    int32(v.AcCount),
 			TotalCount: int32(v.TotalCount),
 		})
@@ -155,6 +139,41 @@ func (c ContestLogService) GetContestRanking(ctx context.Context, req *contest_l
 		Data:    items,
 		Total:   total,
 	}, nil
+}
+
+type userInfo struct {
+	Avatar string
+	Name   string
+}
+
+// fetchUserNames 批量获取用户姓名和头像，一次 RPC 调用
+func (c ContestLogService) fetchUserNames(ctx context.Context, client profile.ProfileClient, logs []model.ContestLog) map[int64]userInfo {
+	result := map[int64]userInfo{}
+	if client == nil || len(logs) == 0 {
+		return result
+	}
+
+	// 去重收集 userId
+	idSet := map[int64]struct{}{}
+	for _, v := range logs {
+		if v.UserID != 0 {
+			idSet[v.UserID] = struct{}{}
+		}
+	}
+	userIds := make([]int64, 0, len(idSet))
+	for id := range idSet {
+		userIds = append(userIds, id)
+	}
+
+	res, err := client.GetByIds(ctx, &profile.GetByIdsReq{UserIds: userIds})
+	if err != nil {
+		log.Errorf("GetByIds batch failed: %v", err)
+		return result
+	}
+	for _, p := range res.Profiles {
+		result[p.UserId] = userInfo{Name: p.Name, Avatar: p.Avatar}
+	}
+	return result
 }
 
 func (c ContestLogService) GetUserContestHistory(ctx context.Context, req *contest_log.GetUserContestHistoryReq) (*contest_log.GetUserContestHistoryRes, error) {

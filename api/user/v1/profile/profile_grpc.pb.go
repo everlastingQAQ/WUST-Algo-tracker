@@ -26,6 +26,7 @@ const (
 	Profile_MoveGroup_FullMethodName         = "/api.user.v1.Profile/MoveGroup"
 	Profile_SetEmailEnabled_FullMethodName   = "/api.user.v1.Profile/SetEmailEnabled"
 	Profile_GetUserIdsByGroup_FullMethodName = "/api.user.v1.Profile/GetUserIdsByGroup"
+	Profile_GetByIds_FullMethodName          = "/api.user.v1.Profile/GetByIds"
 )
 
 // ProfileClient is the client API for Profile service.
@@ -39,6 +40,7 @@ type ProfileClient interface {
 	MoveGroup(ctx context.Context, in *MoveGroupReq, opts ...grpc.CallOption) (*MoveGroupRes, error)
 	SetEmailEnabled(ctx context.Context, in *SetEmailEnabledReq, opts ...grpc.CallOption) (*SetEmailEnabledRes, error)
 	GetUserIdsByGroup(ctx context.Context, in *GetUserIdsByGroupReq, opts ...grpc.CallOption) (*GetUserIdsByGroupRes, error)
+	GetByIds(ctx context.Context, in *GetByIdsReq, opts ...grpc.CallOption) (*GetByIdsRes, error)
 }
 
 type profileClient struct {
@@ -119,6 +121,16 @@ func (c *profileClient) GetUserIdsByGroup(ctx context.Context, in *GetUserIdsByG
 	return out, nil
 }
 
+func (c *profileClient) GetByIds(ctx context.Context, in *GetByIdsReq, opts ...grpc.CallOption) (*GetByIdsRes, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetByIdsRes)
+	err := c.cc.Invoke(ctx, Profile_GetByIds_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ProfileServer is the server API for Profile service.
 // All implementations must embed UnimplementedProfileServer
 // for forward compatibility.
@@ -130,6 +142,7 @@ type ProfileServer interface {
 	MoveGroup(context.Context, *MoveGroupReq) (*MoveGroupRes, error)
 	SetEmailEnabled(context.Context, *SetEmailEnabledReq) (*SetEmailEnabledRes, error)
 	GetUserIdsByGroup(context.Context, *GetUserIdsByGroupReq) (*GetUserIdsByGroupRes, error)
+	GetByIds(context.Context, *GetByIdsReq) (*GetByIdsRes, error)
 	mustEmbedUnimplementedProfileServer()
 }
 
@@ -160,6 +173,9 @@ func (UnimplementedProfileServer) SetEmailEnabled(context.Context, *SetEmailEnab
 }
 func (UnimplementedProfileServer) GetUserIdsByGroup(context.Context, *GetUserIdsByGroupReq) (*GetUserIdsByGroupRes, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetUserIdsByGroup not implemented")
+}
+func (UnimplementedProfileServer) GetByIds(context.Context, *GetByIdsReq) (*GetByIdsRes, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetByIds not implemented")
 }
 func (UnimplementedProfileServer) mustEmbedUnimplementedProfileServer() {}
 func (UnimplementedProfileServer) testEmbeddedByValue()                 {}
@@ -308,6 +324,24 @@ func _Profile_GetUserIdsByGroup_Handler(srv interface{}, ctx context.Context, de
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Profile_GetByIds_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetByIdsReq)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProfileServer).GetByIds(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Profile_GetByIds_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProfileServer).GetByIds(ctx, req.(*GetByIdsReq))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Profile_ServiceDesc is the grpc.ServiceDesc for Profile service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -342,6 +376,10 @@ var Profile_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetUserIdsByGroup",
 			Handler:    _Profile_GetUserIdsByGroup_Handler,
+		},
+		{
+			MethodName: "GetByIds",
+			Handler:    _Profile_GetByIds_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

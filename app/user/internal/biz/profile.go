@@ -23,3 +23,7 @@ func (uc *ProfileUseCase) GetList(ctx context.Context, pageSize, pageNum int64) 
 func (uc *ProfileUseCase) GetUserIdsByGroup(ctx context.Context, groupId int64) ([]int64, error) {
 	return uc.profileDal.GetUserIdsByGroup(ctx, groupId)
 }
+
+func (uc *ProfileUseCase) GetByIds(ctx context.Context, userIds []int64) ([]dal.UserProfile, error) {
+	return uc.profileDal.GetByIds(ctx, userIds)
+}

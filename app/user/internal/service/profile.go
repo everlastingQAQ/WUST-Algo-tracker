@@ -203,6 +203,23 @@ func (p *ProfileService) GetUserIdsByGroup(ctx context.Context, req *profile.Get
 	}, nil
 }
 
+// GetByIds 批量获取用户简要信息（供排行榜等场景使用）
+func (p *ProfileService) GetByIds(ctx context.Context, req *profile.GetByIdsReq) (*profile.GetByIdsRes, error) {
+	profiles, err := p.profileUseCase.GetByIds(ctx, req.UserIds)
+	if err != nil {
+		return nil, errors.InternalServer("内部错误", err.Error())
+	}
+	list := make([]*profile.GetByIdsRes_UserProfile, 0, len(profiles))
+	for _, v := range profiles {
+		list = append(list, &profile.GetByIdsRes_UserProfile{
+			UserId: int64(v.ID),
+			Name:   v.Name,
+			Avatar: v.Avatar,
+		})
+	}
+	return &profile.GetByIdsRes{Profiles: list}, nil
+}
+
 // SetEmailEnabled 设置用户邮件发送开关
 func (p *ProfileService) SetEmailEnabled(ctx context.Context, req *profile.SetEmailEnabledReq) (*profile.SetEmailEnabledRes, error) {
 	if !auth.VerifySelfOrAbove(ctx, uint(req.UserId)) {

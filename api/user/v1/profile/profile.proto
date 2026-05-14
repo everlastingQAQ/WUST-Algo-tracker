@@ -45,6 +45,12 @@ service Profile {
       get: "/v1/user/profile/ids-by-group"
     };
   }
+  rpc GetByIds (GetByIdsReq) returns (GetByIdsRes) {
+    option (google.api.http) = {
+      post: "/v1/user/profile/get-by-ids",
+      body: "*",
+    };
+  }
 }
 
 message GetByIdReq {
@@ -137,4 +143,17 @@ message GetUserIdsByGroupReq {
 
 message GetUserIdsByGroupRes {
   repeated int64 userIds = 1;
+}
+
+message GetByIdsReq {
+  repeated int64 userIds = 1;
+}
+
+message GetByIdsRes {
+  message UserProfile {
+    int64 userId = 1;
+    string name = 2;
+    string avatar = 3;
+  }
+  repeated UserProfile profiles = 1;
 }

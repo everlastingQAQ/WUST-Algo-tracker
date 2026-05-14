@@ -112,6 +112,23 @@ func (d *ProfileDal) GetUserIdsByGroup(ctx context.Context, groupId int64) ([]in
 	return ids, err
 }
 
+// UserProfile 用户简要信息（供批量查询用）
+type UserProfile struct {
+	ID     uint
+	Name   string
+	Avatar string
+}
+
+// GetByIds 批量获取用户简要信息
+func (d *ProfileDal) GetByIds(ctx context.Context, userIds []int64) ([]UserProfile, error) {
+	var profiles []UserProfile
+	err := d.db.Model(&model.User{}).
+		Select("id, name, avatar").
+		Where("id IN ?", userIds).
+		Find(&profiles).Error
+	return profiles, err
+}
+
 // SetRoleId 设置用户角色ID
 func (d *ProfileDal) SetRoleId(ctx context.Context, userId int64, roleId int) error {
 	cacheKey := fmt.Sprintf("user:%d:profile", userId)

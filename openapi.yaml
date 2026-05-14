@@ -461,6 +461,24 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.user.v1.GetByIdRes'
+    /v1/user/profile/get-by-ids:
+        post:
+            tags:
+                - Profile
+            operationId: Profile_GetByIds
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/api.user.v1.GetByIdsReq'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.user.v1.GetByIdsRes'
     /v1/user/profile/get-by-name:
         get:
             tags:
@@ -1020,6 +1038,29 @@ components:
                 platform:
                     type: string
                 username:
+                    type: string
+        api.user.v1.GetByIdsReq:
+            type: object
+            properties:
+                userIds:
+                    type: array
+                    items:
+                        type: string
+        api.user.v1.GetByIdsRes:
+            type: object
+            properties:
+                profiles:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/api.user.v1.GetByIdsRes_UserProfile'
+        api.user.v1.GetByIdsRes_UserProfile:
+            type: object
+            properties:
+                userId:
+                    type: string
+                name:
+                    type: string
+                avatar:
                     type: string
         api.user.v1.GetByNameRes:
             type: object
