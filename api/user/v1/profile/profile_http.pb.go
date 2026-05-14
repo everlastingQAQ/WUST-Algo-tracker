@@ -40,7 +40,7 @@ func RegisterProfileHTTPServer(s *http.Server, srv ProfileHTTPServer) {
 	r.GET("/v1/user/profile/get-by-id", _Profile_GetById0_HTTP_Handler(srv))
 	r.GET("/v1/user/profile/get-by-name", _Profile_GetByName0_HTTP_Handler(srv))
 	r.GET("/v1/user/profile/list", _Profile_GetList0_HTTP_Handler(srv))
-	r.POST("/v1/user/profile/update", _Profile_Update2_HTTP_Handler(srv))
+	r.POST("/v1/user/profile/update", _Profile_Update3_HTTP_Handler(srv))
 	r.POST("/v1/user/profile/move-group", _Profile_MoveGroup0_HTTP_Handler(srv))
 	r.POST("/v1/user/profile/set-email-enabled", _Profile_SetEmailEnabled0_HTTP_Handler(srv))
 }
@@ -102,7 +102,7 @@ func _Profile_GetList0_HTTP_Handler(srv ProfileHTTPServer) func(ctx http.Context
 	}
 }
 
-func _Profile_Update2_HTTP_Handler(srv ProfileHTTPServer) func(ctx http.Context) error {
+func _Profile_Update3_HTTP_Handler(srv ProfileHTTPServer) func(ctx http.Context) error {
 	return func(ctx http.Context) error {
 		var in UpdateReq
 		if err := ctx.Bind(&in); err != nil {
