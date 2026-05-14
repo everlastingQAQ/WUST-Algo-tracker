@@ -5,6 +5,7 @@ import (
 	"cwxu-algo/api/core/v1/submit_log"
 	"cwxu-algo/api/user/v1/group"
 	"cwxu-algo/app/common/discovery"
+	"cwxu-algo/app/common/permission"
 	"cwxu-algo/app/common/utils"
 	"cwxu-algo/app/common/utils/auth"
 	"cwxu-algo/app/user/internal/biz"
@@ -36,8 +37,8 @@ func (g *GroupService) coreDataRPC() (*grpc2.ClientConn, error) {
 }
 
 func (g *GroupService) Create(ctx context.Context, request *group.CreateRequest) (*group.CreateReply, error) {
-	if !auth.VerifyAdmin(ctx) {
-		return nil, errors.Forbidden("权限不足", "需要管理员权限操作")
+	if !auth.VerifyMinRole(ctx, permission.RoleAdmin) {
+		return nil, errors.Forbidden("权限不足", "需要教练或管理员权限操作")
 	}
 	if request.Name == "" {
 		return nil, errors.BadRequest("参数错误", "组名称不能为空")
@@ -53,8 +54,8 @@ func (g *GroupService) Create(ctx context.Context, request *group.CreateRequest)
 }
 
 func (g *GroupService) Delete(ctx context.Context, request *group.DeleteRequest) (*group.DeleteReply, error) {
-	if !auth.VerifyAdmin(ctx) {
-		return nil, errors.Forbidden("权限不足", "需要管理员权限操作")
+	if !auth.VerifyMinRole(ctx, permission.RoleAdmin) {
+		return nil, errors.Forbidden("权限不足", "需要教练或管理员权限操作")
 	}
 	if request.Id == 0 {
 		return nil, errors.BadRequest("参数错误", "组ID不能为空")
@@ -151,8 +152,8 @@ func (g *GroupService) List(ctx context.Context, request *group.ListRequest) (*g
 }
 
 func (g *GroupService) Update(ctx context.Context, request *group.UpdateRequest) (*group.UpdateReply, error) {
-	if !auth.VerifyAdmin(ctx) {
-		return nil, errors.Forbidden("权限不足", "需要管理员权限操作")
+	if !auth.VerifyMinRole(ctx, permission.RoleAdmin) {
+		return nil, errors.Forbidden("权限不足", "需要教练或管理员权限操作")
 	}
 	if request.Id == 0 {
 		return nil, errors.BadRequest("参数错误", "组ID不能为空")

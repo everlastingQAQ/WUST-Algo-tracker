@@ -6,6 +6,7 @@ import (
 	"cwxu-algo/api/core/v1/submit_log"
 	"cwxu-algo/api/user/v1/profile"
 	"cwxu-algo/app/common/discovery"
+	"cwxu-algo/app/common/permission"
 	"cwxu-algo/app/common/utils"
 	"cwxu-algo/app/common/utils/auth"
 	"cwxu-algo/app/user/internal/biz"
@@ -51,8 +52,8 @@ func (p *ProfileService) GetByName(ctx context.Context, req *profile.GetByNameRe
 }
 
 func (p *ProfileService) MoveGroup(ctx context.Context, req *profile.MoveGroupReq) (*profile.MoveGroupRes, error) {
-	if !auth.VerifyAdmin(ctx) {
-		return nil, errors.Forbidden("权限不足", "需要管理员权限操作")
+	if !auth.VerifyMinRole(ctx, permission.RoleAdmin) {
+		return nil, errors.Forbidden("权限不足", "需要教练或管理员权限操作")
 	}
 	err := p.profileDal.MoveGroup(ctx, req.UserId, req.GroupId)
 	if err != nil {
