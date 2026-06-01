@@ -15,7 +15,8 @@ require_command psql
 
 username="$1"
 PGPASSWORD="${POSTGRES_PASSWORD}" psql -h "${POSTGRES_HOST}" -p "${POSTGRES_PORT}" -U "${POSTGRES_USER}" -d "${POSTGRES_USER_DB}" \
-  -v username="${username}" \
-  -c "UPDATE users SET role_id = 1 WHERE username = :'username';"
+  -v username="${username}" <<'SQL'
+UPDATE users SET role_id = 1 WHERE username = :'username';
+SQL
 
 echo "Promoted ${username} to admin. Log out and log back in on the frontend."
