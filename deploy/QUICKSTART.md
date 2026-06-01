@@ -9,6 +9,14 @@ sudo apt update
 sudo apt install -y git curl nginx gettext-base postgresql-client build-essential
 ```
 
+Create the deployment user:
+
+```bash
+sudo adduser acm_tracker
+sudo usermod -aG sudo acm_tracker
+getent group docker >/dev/null && sudo usermod -aG docker acm_tracker
+```
+
 Install Docker with the Compose plugin if it is not already available:
 
 ```bash
@@ -37,8 +45,9 @@ source ~/.bashrc
 
 ```bash
 sudo mkdir -p /opt/wust-algo
-sudo chown -R "$USER:$USER" /opt/wust-algo
+sudo chown -R acm_tracker:acm_tracker /opt/wust-algo
 
+sudo -iu acm_tracker
 cd /opt/wust-algo
 git clone https://github.com/everlastingQAQ/WUST-Algo-tracker.git tracker
 git clone https://github.com/everlastingQAQ/WUST-Algo-Frontend.git frontend

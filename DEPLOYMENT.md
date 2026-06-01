@@ -17,6 +17,14 @@ The scripts assume this layout by default:
 
 You can change paths and credentials in `deploy/.env`.
 
+The default systemd runtime user is `acm_tracker`. Create it before deployment:
+
+```bash
+sudo adduser acm_tracker
+sudo usermod -aG sudo acm_tracker
+getent group docker >/dev/null && sudo usermod -aG docker acm_tracker
+```
+
 ## One-Time Backend Deployment
 
 ```bash
