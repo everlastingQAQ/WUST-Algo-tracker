@@ -2,6 +2,7 @@ package dal
 
 import (
 	"context"
+	"cwxu-algo/app/core_data/internal/data/model"
 	"time"
 
 	"github.com/go-kratos/kratos/v2/log"
@@ -93,6 +94,13 @@ type PlatformPeriodCount struct {
 
 const acCondition = "(status ILIKE '%AC%' OR status ILIKE '%正确%' OR status ILIKE '%OK%')"
 const acDistinctKey = "user_id::text || '|' || platform || '|' || COALESCE(NULLIF(BTRIM(problem), ''), submit_id)"
+const acProblemKey = "platform || '|' || COALESCE(NULLIF(BTRIM(problem), ''), submit_id)"
+
+type AcOverlapCount struct {
+	CommonAcCount    int64
+	LeftOnlyAcCount  int64
+	RightOnlyAcCount int64
+}
 
 // GetPeriodCount 获取时间段统计数据
 func (d *StatisticDal) GetPeriodCount(userId int64) (PeriodSubmitCount, PeriodAcCount, error) {
@@ -241,6 +249,40 @@ func (d *StatisticDal) GetPlatformPeriodCount(userId int64, platforms []string) 
 		})
 	}
 	return result, nil
+}
+
+func (d *StatisticDal) GetRecentSubmitLogs(userId int64, limit int64) ([]model.SubmitLog, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+	var logs []model.SubmitLog
+	err := d.db.
+		Where("user_id = ?", userId).
+		Order("time DESC").
+		Limit(int(limit)).
+		Find(&logs).Error
+	return logs, err
+}
+
+func (d *StatisticDal) GetAcOverlapCount(leftUserId int64, rightUserId int64) (AcOverlapCount, error) {
+	var result AcOverlapCount
+	err := d.db.Raw(`
+		WITH left_ac AS (
+			SELECT DISTINCT `+acProblemKey+` AS problem_key
+			FROM submit_logs
+			WHERE user_id = ? AND `+acCondition+`
+		),
+		right_ac AS (
+			SELECT DISTINCT `+acProblemKey+` AS problem_key
+			FROM submit_logs
+			WHERE user_id = ? AND `+acCondition+`
+		)
+		SELECT
+			(SELECT COUNT(*) FROM left_ac l INNER JOIN right_ac r ON l.problem_key = r.problem_key) AS common_ac_count,
+			(SELECT COUNT(*) FROM left_ac l LEFT JOIN right_ac r ON l.problem_key = r.problem_key WHERE r.problem_key IS NULL) AS left_only_ac_count,
+			(SELECT COUNT(*) FROM right_ac r LEFT JOIN left_ac l ON r.problem_key = l.problem_key WHERE l.problem_key IS NULL) AS right_only_ac_count
+	`, leftUserId, rightUserId).Scan(&result).Error
+	return result, err
 }
 
 // RankItem 排行榜项
