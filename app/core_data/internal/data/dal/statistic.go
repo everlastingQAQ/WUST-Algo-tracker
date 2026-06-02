@@ -91,6 +91,9 @@ type PlatformPeriodCount struct {
 	Ac       PeriodAcCount
 }
 
+const acCondition = "(status ILIKE '%AC%' OR status ILIKE '%正确%' OR status ILIKE '%OK%')"
+const acDistinctKey = "user_id::text || '|' || platform || '|' || COALESCE(NULLIF(BTRIM(problem), ''), submit_id)"
+
 // GetPeriodCount 获取时间段统计数据
 func (d *StatisticDal) GetPeriodCount(userId int64) (PeriodSubmitCount, PeriodAcCount, error) {
 	now := time.Now()
@@ -161,8 +164,6 @@ func (d *StatisticDal) GetPlatformPeriodCount(userId int64, platforms []string) 
 		AcTotal         int64
 	}
 
-	acDistinctKey := "user_id::text || '|' || platform || '|' || problem"
-	acCondition := "(status ILIKE '%AC%' OR status ILIKE '%正确%' OR status ILIKE '%OK%')"
 	query := d.db.Table("submit_logs").Where("platform IN ?", platforms)
 	if userId != -1 {
 		query = query.Where("user_id = ?", userId)
@@ -296,7 +297,7 @@ func (d *StatisticDal) GetRank(ctx context.Context, userId int64, timeType, scor
 
 	// 根据scoreType决定统计方式
 	if scoreType == "ac" {
-		// AC排行榜，按user_id, problem去重
+		// AC排行榜，按 user_id, platform, problem 去重。跨平台同名题不能合并。
 		baseQuery = baseQuery.Where("status ILIKE ? OR status ILIKE ? OR status ILIKE ?", "%AC%", "%正确%", "%OK%")
 	}
 
@@ -320,7 +321,7 @@ func (d *StatisticDal) GetRank(ctx context.Context, userId int64, timeType, scor
 	// 执行查询
 	var selectClause string
 	if scoreType == "ac" {
-		selectClause = "COUNT(DISTINCT problem)"
+		selectClause = "COUNT(DISTINCT platform || '|' || COALESCE(NULLIF(BTRIM(problem), ''), submit_id))"
 	} else {
 		selectClause = "COUNT(*)"
 	}
@@ -407,7 +408,7 @@ func (d *StatisticDal) countAcDistinctQueryByPlatform(userId int64, platform str
 	if platform != "" {
 		query = query.Where("platform = ?", platform)
 	}
-	if err := query.Select("COUNT(DISTINCT user_id::text || '|' || platform || '|' || problem)").Scan(&count).Error; err != nil {
+	if err := query.Select("COUNT(DISTINCT " + acDistinctKey + ")").Scan(&count).Error; err != nil {
 		log.Errorf("countAcDistinctQuery error: %v", err)
 	}
 	return count
@@ -428,7 +429,7 @@ func (d *StatisticDal) countAcDistinctTotalByPlatform(userId int64, platform str
 	if platform != "" {
 		query = query.Where("platform = ?", platform)
 	}
-	if err := query.Select("COUNT(DISTINCT user_id::text || '|' || platform || '|' || problem)").Scan(&count).Error; err != nil {
+	if err := query.Select("COUNT(DISTINCT " + acDistinctKey + ")").Scan(&count).Error; err != nil {
 		log.Errorf("countAcDistinctTotal error: %v", err)
 	}
 	return count

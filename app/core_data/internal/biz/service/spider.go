@@ -58,8 +58,15 @@ func (uc *SpiderUseCase) fetchAndSave(userId int64, plat model.Platform, needAll
 
 	return uc.data.DB.
 		Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "platform"}, {Name: "submit_id"}},
-			DoNothing: true,
+			Columns: []clause.Column{{Name: "platform"}, {Name: "submit_id"}},
+			DoUpdates: clause.AssignmentColumns([]string{
+				"user_id",
+				"contest",
+				"problem",
+				"lang",
+				"status",
+				"time",
+			}),
 		}).
 		Save(&tmp).Error
 }

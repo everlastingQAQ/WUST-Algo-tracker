@@ -8,6 +8,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -17,6 +18,7 @@ import (
 
 type Submission struct {
 	RunID      string
+	ProblemID  string
 	Problem    string
 	Result     string
 	Score      string
@@ -27,6 +29,32 @@ type Submission struct {
 	SubmitTime string
 }
 type NewNowCoder struct{}
+
+var nowCoderProblemPathRe = regexp.MustCompile(`/acm/problem/([^/?#]+)`)
+
+func normalizeNowCoderProblem(problemID, title string) string {
+	problemID = strings.TrimSpace(problemID)
+	title = strings.TrimSpace(title)
+	if problemID == "" {
+		return title
+	}
+	if title == "" {
+		return problemID
+	}
+	return problemID + " " + title
+}
+
+func extractNowCoderProblemID(problemCell *goquery.Selection) string {
+	href, ok := problemCell.Find("a").First().Attr("href")
+	if !ok {
+		return ""
+	}
+	matches := nowCoderProblemPathRe.FindStringSubmatch(href)
+	if len(matches) < 2 {
+		return ""
+	}
+	return matches[1]
+}
 
 // getSubLogResp 获取submissionLog信息
 func getSubLogResp(url string) (*goquery.Document, error) {
@@ -56,9 +84,11 @@ func analysisSubs(doc *goquery.Document) []Submission {
 		if tds.Length() < 9 {
 			return
 		}
+		problemCell := tds.Eq(1)
 		sub := Submission{
 			RunID:      strings.TrimSpace(tds.Eq(0).Text()),
-			Problem:    strings.TrimSpace(tds.Eq(1).Text()),
+			ProblemID:  extractNowCoderProblemID(problemCell),
+			Problem:    strings.TrimSpace(problemCell.Text()),
 			Result:     strings.TrimSpace(tds.Eq(2).Text()),
 			Score:      strings.TrimSpace(tds.Eq(3).Text()),
 			TimeMS:     strings.TrimSpace(tds.Eq(4).Text()),
@@ -140,7 +170,7 @@ func (nc NewNowCoder) fetchSub(userId int64, username string, needAll bool) []mo
 				Platform: spider.NowCoder,
 				SubmitID: strconv.FormatInt(it.Submission.ID, 10),
 				Contest:  "main|" + username,
-				Problem:  it.Problem.QuestionNum + " " + it.Problem.Title,
+				Problem:  normalizeNowCoderProblem(it.Problem.QuestionNum, it.Problem.Title),
 				Lang:     it.Language,
 				Status:   it.Status.Desc,
 				Time:     time.Unix(it.Submission.CreatedDate/1000, 0),
@@ -224,7 +254,7 @@ func (nc NewNowCoder) FetchSubmitLog(userId int64, username string, needAll bool
 			Platform: spider.NowCoder,
 			SubmitID: v.RunID,
 			Contest:  "",
-			Problem:  v.Problem,
+			Problem:  normalizeNowCoderProblem(v.ProblemID, v.Problem),
 			Lang:     v.Language,
 			Status:   v.Result,
 			Time:     timeParse,
