@@ -23,17 +23,14 @@ func NewProfileDal(data *data.Data) *ProfileDal {
 
 // GetById 根据Id获取用户详细信息
 func (d *ProfileDal) GetById(ctx context.Context, userId int64) (*model.User, error) {
-	cacheKey := fmt.Sprintf("user:%d:profile", userId)
-	profile, _, err := data2.GetCacheDal[model.User](ctx, d.rdb, cacheKey, func(data *model.User) error {
-		err := d.db.Where("id = ?", userId).First(data).Error
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return fmt.Errorf("没有找到相关用户信息")
-		} else if err != nil {
-			return fmt.Errorf("未知错误 %s", err.Error())
-		}
-		return nil
-	})
-	return profile, err
+	var profile model.User
+	err := d.db.WithContext(ctx).Where("id = ?", userId).First(&profile).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, fmt.Errorf("没有找到相关用户信息")
+	} else if err != nil {
+		return nil, fmt.Errorf("未知错误 %s", err.Error())
+	}
+	return &profile, nil
 }
 
 // GetByName 根据姓名模糊查询用户信息
@@ -60,9 +57,75 @@ func (d *ProfileDal) Update(ctx context.Context, profile model.User) error {
 	return err
 }
 
+func (d *ProfileDal) ChangePassword(ctx context.Context, userId int64, newPassword string) error {
+	cacheKey := fmt.Sprintf("user:%d:profile", userId)
+	return data2.UpdateCacheDal(ctx, d.rdb, cacheKey, func() error {
+		result := d.db.Model(&model.User{}).Where("id = ?", userId).Update("password", newPassword)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return fmt.Errorf("用户不存在")
+		}
+		return nil
+	})
+}
+
+func (d *ProfileDal) DeleteUser(ctx context.Context, userId int64) error {
+	cacheKey := fmt.Sprintf("user:%d:profile", userId)
+	return data2.UpdateCacheDal(ctx, d.rdb, cacheKey, func() error {
+		return d.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			var user model.User
+			if err := tx.Where("id = ?", userId).First(&user).Error; err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return fmt.Errorf("用户不存在")
+				}
+				return err
+			}
+
+			if user.GroupId != 0 {
+				var group model.Group
+				err := tx.Where("id = ? AND owner_id = ?", user.GroupId, userId).First(&group).Error
+				if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+					return err
+				}
+				if err == nil {
+					var replacement model.User
+					replacementErr := tx.Select("id").
+						Where("group_id = ? AND id <> ?", user.GroupId, userId).
+						Order("id").
+						First(&replacement).Error
+					newOwnerId := int64(0)
+					if replacementErr != nil && !errors.Is(replacementErr, gorm.ErrRecordNotFound) {
+						return replacementErr
+					}
+					if replacementErr == nil {
+						newOwnerId = int64(replacement.ID)
+					}
+					if err := tx.Model(&model.Group{}).Where("id = ?", user.GroupId).Update("owner_id", newOwnerId).Error; err != nil {
+						return err
+					}
+				}
+			}
+
+			if err := tx.Where("inviter_id = ? OR invitee_id = ?", userId, userId).Delete(&model.GroupInvite{}).Error; err != nil {
+				return err
+			}
+			result := tx.Delete(&model.User{}, userId)
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected == 0 {
+				return fmt.Errorf("用户不存在")
+			}
+			return nil
+		})
+	})
+}
+
 func (d *ProfileDal) GetList(ctx context.Context, pageSize, pageNum int64) ([]model.User, int64, error) {
 	var list []model.User
-	err :=	d.db.Select("id", "username", "name", "groupId", "avatar", "roleId").
+	err := d.db.Select("id", "username", "name", "groupId", "avatar", "roleId").
 		Order("id").
 		Limit(int(pageSize)).Offset(int(pageNum-1) * int(pageSize)).
 		Find(&list).Error

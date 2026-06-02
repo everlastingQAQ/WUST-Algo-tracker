@@ -9,7 +9,9 @@ import (
 	"cwxu-algo/app/agent/internal/data"
 	"cwxu-algo/app/common/conf"
 	"cwxu-algo/app/common/discovery"
+	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	profile2 "cwxu-algo/api/user/v1/profile"
@@ -101,7 +103,11 @@ func (uc *SummaryUseCase) PersonalLastDay(userId int64) error {
 		uc.mailConf.Username,
 		uc.mailConf.Password,
 		uc.mailConf.From)
-	r, _ := chat.Chat(msg, core_data.NewSubmitCnt(uc.reg), core_data.NewGetProfileById(uc.reg), core_data.NewSubmitLog(uc.reg), emailTool)
+	r, err := chat.Chat(msg, core_data.NewSubmitCnt(uc.reg), core_data.NewGetProfileById(uc.reg), core_data.NewSubmitLog(uc.reg), emailTool)
+	if err != nil {
+		log.Errorf("生成用户 %d 日报失败: %v", userId, err)
+		return err
+	}
 	log.Info(r)
 	return nil
 }
@@ -132,9 +138,56 @@ func (uc *SummaryUseCase) PersonalRecent(userId int64) error {
 			},
 		},
 	}
-	r, _ := chat.Chat(msg, core_data.NewStatisticPeriod(uc.reg), data2.NewRedisSet(uc.redis))
+	r, err := chat.Chat(msg, core_data.NewStatisticPeriod(uc.reg), data2.NewRedisSet(uc.redis))
+	if err != nil {
+		log.Errorf("生成用户 %d 近期 AI 总结失败: %v", userId, err)
+		return err
+	}
 	log.Info(r)
+	key := fmt.Sprintf("agent:summary:%d:recent", userId)
+	exists, err := uc.redis.Exists(context.Background(), key).Result()
+	if err != nil {
+		return err
+	}
+	if exists == 0 {
+		if strings.TrimSpace(r) == "" {
+			return fmt.Errorf("用户 %d 的近期 AI 总结为空，且模型未写入 Redis", userId)
+		}
+		if err := uc.redis.Set(context.Background(), key, normalizeRecentSummaryJSON(r), 0).Err(); err != nil {
+			return err
+		}
+		log.Infof("模型未调用 Redis 工具，已由服务端兜底写入 %s", key)
+	}
 	return nil
+}
+
+func normalizeRecentSummaryJSON(raw string) string {
+	s := strings.TrimSpace(raw)
+	s = strings.TrimPrefix(s, "```json")
+	s = strings.TrimPrefix(s, "```")
+	s = strings.TrimSuffix(s, "```")
+	s = strings.TrimSpace(s)
+	if start := strings.Index(s, "{"); start >= 0 {
+		if end := strings.LastIndex(s, "}"); end >= start {
+			candidate := s[start : end+1]
+			var obj map[string]interface{}
+			if err := json.Unmarshal([]byte(candidate), &obj); err == nil {
+				if _, ok := obj["msg"]; ok {
+					if _, ok := obj["updateTime"]; !ok {
+						obj["updateTime"] = time.Now().Unix()
+					}
+					if data, err := json.Marshal(obj); err == nil {
+						return string(data)
+					}
+				}
+			}
+		}
+	}
+	fallback, _ := json.Marshal(map[string]interface{}{
+		"msg":        []string{s},
+		"updateTime": time.Now().Unix(),
+	})
+	return string(fallback)
 }
 
 func (uc *SummaryUseCase) userRPC() (*grpc2.ClientConn, error) {
@@ -262,11 +315,15 @@ func (uc *SummaryUseCase) WeeklyReportForCoach(coachUserId int64) error {
 		uc.mailConf.Username,
 		uc.mailConf.Password,
 		uc.mailConf.From)
-	r, _ := chat.Chat(msg,
+	r, err := chat.Chat(msg,
 		core_data.NewSubmitCnt(uc.reg),
 		core_data.NewGetProfileById(uc.reg),
 		core_data.NewStatisticPeriod(uc.reg),
 		emailTool)
+	if err != nil {
+		log.Errorf("生成教练 %d 周报失败: %v", coachUserId, err)
+		return err
+	}
 	log.Info(r)
 	return nil
 }

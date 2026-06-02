@@ -39,6 +39,8 @@ func migrateModels(db *gorm.DB) {
 	err := db.AutoMigrate(
 		&model.User{},
 		&model.Group{},
+		&model.GroupInvite{},
+		&model.SystemConfig{},
 	)
 	if err != nil {
 		panic("数据库：数据库自动合并失败")

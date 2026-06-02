@@ -234,6 +234,7 @@ func (q *NewQOJ) FetchSubmitLog(userId int64, username string, needAll bool) ([]
 			break
 		}
 
+		loc, _ := time.LoadLocation("Asia/Shanghai")
 		for _, row := range rows {
 			cellRe := regexp.MustCompile(`(?s)<td[^>]*>(.*?)</td>`)
 			cells := cellRe.FindAllStringSubmatch(row[1], -1)
@@ -255,7 +256,7 @@ func (q *NewQOJ) FetchSubmitLog(userId int64, username string, needAll bool) ([]
 				status = "CE"
 			}
 
-			t, _ := time.ParseInLocation("2006-01-02 15:04:05", timeStr, time.Local)
+			t, _ := time.ParseInLocation("2006-01-02 15:04:05", timeStr, loc)
 
 			res = append(res, model.SubmitLog{
 				UserID:   userId,

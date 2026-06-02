@@ -35,6 +35,26 @@ type ProfileService struct {
 	profileUseCase *biz.ProfileUseCase
 }
 
+type ChangePasswordRequest struct {
+	UserId      int64  `json:"userId"`
+	OldPassword string `json:"oldPassword"`
+	NewPassword string `json:"newPassword"`
+}
+
+type ChangePasswordReply struct {
+	Success bool   `json:"success"`
+	Message string `json:"message"`
+}
+
+type DeleteUserRequest struct {
+	UserId int64 `json:"userId"`
+}
+
+type DeleteUserReply struct {
+	Success bool   `json:"success"`
+	Message string `json:"message"`
+}
+
 func (p *ProfileService) GetByName(ctx context.Context, req *profile.GetByNameReq) (*profile.GetByNameRes, error) {
 	userList, err := p.profileDal.GetByName(ctx, req.Name)
 	if err != nil {
@@ -146,6 +166,69 @@ func (p *ProfileService) Update(ctx context.Context, req *profile.UpdateReq) (*p
 		return res, nil
 	}
 	return nil, errors.InternalServer("内部错误", err.Error())
+}
+
+func (p *ProfileService) ChangePassword(ctx context.Context, req *ChangePasswordRequest) (*ChangePasswordReply, error) {
+	current := auth.GetCurrentUser(ctx)
+	if current == nil || current.UserID == 0 {
+		return nil, errors.Unauthorized("未登录", "请先登录")
+	}
+	if req.UserId == 0 || req.NewPassword == "" {
+		return nil, errors.BadRequest("参数错误", "用户ID和新密码不能为空")
+	}
+
+	isAdmin := current.RoleID == permission.RoleAdmin
+	isSelf := int64(current.UserID) == req.UserId
+	if !isAdmin && !isSelf {
+		return nil, errors.Forbidden("权限不足", "只能修改自己的密码")
+	}
+
+	if !isAdmin {
+		if req.OldPassword == "" {
+			return nil, errors.BadRequest("参数错误", "请输入旧密码")
+		}
+		pf, err := p.profileDal.GetById(ctx, req.UserId)
+		if err != nil {
+			return nil, errors.InternalServer("内部错误", err.Error())
+		}
+		if pf.Password != req.OldPassword {
+			return &ChangePasswordReply{Success: false, Message: "旧密码错误"}, nil
+		}
+	}
+
+	if err := p.profileDal.ChangePassword(ctx, req.UserId, req.NewPassword); err != nil {
+		return nil, errors.InternalServer("内部错误", err.Error())
+	}
+	return &ChangePasswordReply{Success: true, Message: "密码已更新"}, nil
+}
+
+func (p *ProfileService) DeleteUser(ctx context.Context, req *DeleteUserRequest) (*DeleteUserReply, error) {
+	current := auth.GetCurrentUser(ctx)
+	if current == nil || current.UserID == 0 {
+		return nil, errors.Unauthorized("未登录", "请先登录")
+	}
+	if current.RoleID != permission.RoleAdmin {
+		return nil, errors.Forbidden("权限不足", "仅管理员可删除用户")
+	}
+	if req.UserId == 0 {
+		return nil, errors.BadRequest("参数错误", "用户ID不能为空")
+	}
+	if int64(current.UserID) == req.UserId {
+		return nil, errors.Forbidden("权限不足", "不能删除当前登录账号")
+	}
+
+	target, err := p.profileDal.GetById(ctx, req.UserId)
+	if err != nil {
+		return nil, errors.BadRequest("用户不存在", "用户不存在")
+	}
+	if target.RoleID == permission.RoleAdmin {
+		return nil, errors.Forbidden("权限不足", "不能删除管理员账号")
+	}
+
+	if err := p.profileDal.DeleteUser(ctx, req.UserId); err != nil {
+		return nil, errors.InternalServer("内部错误", err.Error())
+	}
+	return &DeleteUserReply{Success: true, Message: "用户已删除"}, nil
 }
 
 func (p *ProfileService) GetById(ctx context.Context, req *profile.GetByIdReq) (*profile.GetByIdRes, error) {

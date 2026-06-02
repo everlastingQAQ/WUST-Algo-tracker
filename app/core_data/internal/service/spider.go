@@ -27,10 +27,10 @@ var (
 
 type SpiderService struct {
 	spider.UnimplementedSpiderServer
-	db          *gorm.DB
-	rdb         *redis.Client
-	spider      *task.SpiderTask
-	limiterMap  sync.Map // map[int64]*rate.Limiter
+	db         *gorm.DB
+	rdb        *redis.Client
+	spider     *task.SpiderTask
+	limiterMap sync.Map // map[int64]*rate.Limiter
 }
 
 func (s *SpiderService) getLimiter(userId int64, interval time.Duration) *rate.Limiter {
@@ -98,7 +98,7 @@ func (s SpiderService) SetSpider(ctx context.Context, req *spider.SetSpiderReq) 
 	if err := s.db.Where("user_id = ? AND platform = ?", req.UserId, req.Platform).Delete(&model.SubmitLog{}).Error; err != nil {
 		log.Errorf("SetSpider: delete submit_log failed: %v", err)
 	}
-	if err := s.rdb.Del(ctx, fmt.Sprintf("core:submit_log:user:%d", req.UserId)).Err(); err != nil {
+	if err := s.rdb.Del(ctx, fmt.Sprintf("core:submit_log:user:%d", req.UserId), "core:submit_log:user:-1").Err(); err != nil {
 		log.Errorf("SetSpider: redis del failed: %v", err)
 	}
 	err := s.db.Save(&platform).Error

@@ -10,6 +10,9 @@ import (
 	"cwxu-algo/app/common/conf"
 	_const "cwxu-algo/app/common/const"
 	"cwxu-algo/app/core_data/internal/service"
+	"encoding/json"
+	nethttp "net/http"
+	"strconv"
 
 	"github.com/go-kratos/kratos/v2/log"
 	"github.com/go-kratos/kratos/v2/middleware/auth/jwt"
@@ -21,14 +24,15 @@ import (
 
 func NewWhiteListMatcher() selector.MatchFunc {
 	whiteList := map[string]string{
-		"/api.core.v1.submit_log.Submit/GetSubmitLog":         "",
-		"/api.core.v1.contest_log.Contest/GetContestList":     "",
-		"/api.core.v1.contest_log.Contest/GetContestRanking":  "",
-		"/api.core.v1.spider.Spider/GetSpider":                "",
-		"/api.core.v1.statistic.Statistic/Heatmap":            "",
-		"/api.core.v1.statistic.Statistic/PeriodCount":        "",
-		"/api.core.v1.bulletin.Bulletin/Get":                  "",
-		"/api.core.v1.bulletin.Bulletin/List":                 "",
+		"/api.core.v1.submit_log.Submit/GetSubmitLog":        "",
+		"/api.core.v1.contest_log.Contest/GetContestList":    "",
+		"/api.core.v1.contest_log.Contest/GetContestRanking": "",
+		"/api.core.v1.spider.Spider/GetSpider":               "",
+		"/api.core.v1.statistic.Statistic/Heatmap":           "",
+		"/api.core.v1.statistic.Statistic/PeriodCount":       "",
+		"/v1/core/statistic/platform-period":                 "",
+		"/api.core.v1.bulletin.Bulletin/Get":                 "",
+		"/api.core.v1.bulletin.Bulletin/List":                "",
 	}
 	return func(ctx context.Context, operation string) bool {
 		//log.Info(operation)
@@ -64,5 +68,31 @@ func NewHTTPServer(c *conf.Server, logger log.Logger, submitService *service.Sub
 	statistic2.RegisterStatisticHTTPServer(srv, statisticService)
 	contest_log.RegisterContestHTTPServer(srv, contestLogService)
 	bulletin.RegisterBulletinHTTPServer(srv, bulletinService)
+	srv.HandleFunc("/v1/core/statistic/platform-period", func(w nethttp.ResponseWriter, r *nethttp.Request) {
+		if r.Method != nethttp.MethodGet {
+			w.WriteHeader(nethttp.StatusMethodNotAllowed)
+			return
+		}
+
+		userId := int64(-1)
+		if raw := r.URL.Query().Get("userId"); raw != "" {
+			parsed, err := strconv.ParseInt(raw, 10, 64)
+			if err != nil {
+				w.WriteHeader(nethttp.StatusBadRequest)
+				_ = json.NewEncoder(w).Encode(map[string]any{"code": 400, "message": "userId参数错误"})
+				return
+			}
+			userId = parsed
+		}
+
+		data, err := statisticService.PlatformPeriod(r.Context(), userId)
+		w.Header().Set("Content-Type", "application/json")
+		if err != nil {
+			w.WriteHeader(nethttp.StatusInternalServerError)
+			_ = json.NewEncoder(w).Encode(map[string]any{"code": 500, "message": err.Error()})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": data})
+	})
 	return srv
 }

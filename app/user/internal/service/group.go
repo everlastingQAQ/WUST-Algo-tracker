@@ -10,6 +10,7 @@ import (
 	"cwxu-algo/app/common/utils/auth"
 	"cwxu-algo/app/user/internal/biz"
 	"cwxu-algo/app/user/internal/data/dal"
+	dalModel "cwxu-algo/app/user/internal/data/model"
 	"strconv"
 	"time"
 
@@ -146,9 +147,24 @@ func (g *GroupService) List(ctx context.Context, request *group.ListRequest) (*g
 			Id:       int64(g.ID),
 			Name:     name,
 			Describe: g.Describe,
+			Users:    groupUsers(g.Users),
 		})
 	}
 	return reply, nil
+}
+
+func groupUsers(users []dalModel.User) []*group.User {
+	result := make([]*group.User, 0, len(users))
+	for _, u := range users {
+		result = append(result, &group.User{
+			UserId:   uint64(u.ID),
+			Username: u.Username,
+			Name:     u.Name,
+			GroupId:  u.GroupId,
+			Avatar:   u.Avatar,
+		})
+	}
+	return result
 }
 
 func (g *GroupService) Update(ctx context.Context, request *group.UpdateRequest) (*group.UpdateReply, error) {

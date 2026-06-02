@@ -31,6 +31,16 @@ func GetCacheDal[T any](
 	cacheKey string,
 	dbFunc func(data *T) error,
 ) (*T, bool, error) {
+	return GetCacheDalWithTTL(ctx, rdb, cacheKey, 48*time.Hour, dbFunc)
+}
+
+func GetCacheDalWithTTL[T any](
+	ctx context.Context,
+	rdb *redis.Client,
+	cacheKey string,
+	ttl time.Duration,
+	dbFunc func(data *T) error,
+) (*T, bool, error) {
 	// 尝试去查 Redis
 	res := rdb.Get(ctx, cacheKey)
 	rVal, err := res.Result()
@@ -45,7 +55,7 @@ func GetCacheDal[T any](
 		if err != nil {
 			return nil, false, errors.New("gob编码失败")
 		}
-		rdb.Set(ctx, cacheKey, b, 48*time.Hour)
+		rdb.Set(ctx, cacheKey, b, ttl)
 		return &data, false, nil
 	}
 	err = utils.GobDecoder([]byte(rVal), &data)

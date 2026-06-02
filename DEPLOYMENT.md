@@ -82,4 +82,6 @@ bash deploy/scripts/status.sh
 ## Notes
 
 - The backend code currently uses a hard-coded JWT secret in `app/common/const/const.go`; change it before exposing the service publicly.
-- Agent features require valid Volcengine Ark and SMTP settings. Leave `ENABLE_AGENT=0` until those values are ready.
+- Agent features require valid OpenAI-compatible AI settings, for example DeepSeek:
+  `AI_BASE_URL=https://api.deepseek.com`, `AI_MODEL=deepseek-chat`, and `AI_API_KEY=...`.
+  Leave `ENABLE_AGENT=0` until those values and SMTP settings are ready.

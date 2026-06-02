@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"cwxu-algo/api/core/v1/statistic"
 	data2 "cwxu-algo/app/common/data"
@@ -11,6 +12,8 @@ import (
 	"github.com/go-kratos/kratos/v2/errors"
 	"github.com/redis/go-redis/v9"
 )
+
+const statisticCacheTTL = time.Minute
 
 // StatisticUseCase 统计业务逻辑层
 type StatisticUseCase struct {
@@ -38,7 +41,7 @@ func (uc *StatisticUseCase) Heatmap(ctx context.Context, req *statistic.HeatmapR
 	}
 
 	cacheKey := fmt.Sprintf("statistic:heatmap:%d:%s:%s:%t", req.UserId, req.StartDate, req.EndDate, req.IsAc)
-	result, _, err := data2.GetCacheDal[[]dal.DailyCount](ctx, uc.rdb, cacheKey, func(data *[]dal.DailyCount) error {
+	result, _, err := data2.GetCacheDalWithTTL[[]dal.DailyCount](ctx, uc.rdb, cacheKey, statisticCacheTTL, func(data *[]dal.DailyCount) error {
 		var err error
 		*data, err = uc.dal.HeatmapQuery(ctx, req.StartDate, req.EndDate, req.UserId, req.IsAc)
 		return err
@@ -72,7 +75,7 @@ func (uc *StatisticUseCase) PeriodCount(ctx context.Context, req *statistic.Peri
 		Ac     dal.PeriodAcCount
 	}
 
-	result, _, err := data2.GetCacheDal[PeriodCountData](ctx, uc.rdb, cacheKey, func(data *PeriodCountData) error {
+	result, _, err := data2.GetCacheDalWithTTL[PeriodCountData](ctx, uc.rdb, cacheKey, statisticCacheTTL, func(data *PeriodCountData) error {
 		var err error
 		data.Submit, data.Ac, err = uc.dal.GetPeriodCount(req.UserId)
 		return err
@@ -106,4 +109,20 @@ func (uc *StatisticUseCase) PeriodCount(ctx context.Context, req *statistic.Peri
 			},
 		},
 	}, nil
+}
+
+func (uc *StatisticUseCase) PlatformPeriodCount(ctx context.Context, userId int64) ([]dal.PlatformPeriodCount, error) {
+	cacheKey := fmt.Sprintf("statistic:platform-period:%d", userId)
+	platforms := []string{"AtCoder", "NowCoder", "LuoGu", "CodeForces", "QOJ"}
+
+	result, _, err := data2.GetCacheDalWithTTL[[]dal.PlatformPeriodCount](ctx, uc.rdb, cacheKey, statisticCacheTTL, func(data *[]dal.PlatformPeriodCount) error {
+		var err error
+		*data, err = uc.dal.GetPlatformPeriodCount(userId, platforms)
+		return err
+	})
+	if err != nil {
+		return nil, errors.InternalServer("内部错误", err.Error())
+	}
+
+	return *result, nil
 }

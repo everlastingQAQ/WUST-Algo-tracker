@@ -62,7 +62,8 @@ nano deploy/.env
 bash deploy/scripts/deploy-backend.sh
 ```
 
-Keep `ENABLE_AGENT=0` until Volcengine Ark and SMTP settings are real.
+Keep `ENABLE_AGENT=0` until OpenAI-compatible AI settings and SMTP settings are real.
+For DeepSeek, set `AI_BASE_URL=https://api.deepseek.com`, `AI_MODEL=deepseek-chat`, and `AI_API_KEY`.
 
 ## 4. Deploy Frontend
 

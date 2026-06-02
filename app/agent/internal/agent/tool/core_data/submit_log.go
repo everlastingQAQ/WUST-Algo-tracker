@@ -55,11 +55,11 @@ func (c *SubmitLog) Description() *model.Tool {
 						"description": "结束时间，例如 20220101",
 					},
 					"limit": map[string]interface{}{
-						"type":        "int",
+						"type":        "integer",
 						"description": "从endDate开始，向前退limit条",
 					},
 					"userId": map[string]interface{}{
-						"type":        "int",
+						"type":        "integer",
 						"description": "用户id",
 					},
 				},

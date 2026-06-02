@@ -47,7 +47,7 @@ func (c *StatisticPeriod) Description() *model.Tool {
 				"type": "object",
 				"properties": map[string]interface{}{
 					"userId": map[string]interface{}{
-						"type":        "int",
+						"type":        "integer",
 						"description": "用户id",
 					},
 				},

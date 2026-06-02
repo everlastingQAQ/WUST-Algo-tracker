@@ -38,6 +38,7 @@ message RegisterReq {
   string name = 3;
   string email = 4;
   int64 groupId = 5;
+  string inviteCode = 6;
 }
 message RegisterRes {
   bool success = 1;

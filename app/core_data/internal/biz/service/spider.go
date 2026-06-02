@@ -58,7 +58,7 @@ func (uc *SpiderUseCase) fetchAndSave(userId int64, plat model.Platform, needAll
 
 	return uc.data.DB.
 		Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "submit_id"}},
+			Columns:   []clause.Column{{Name: "platform"}, {Name: "submit_id"}},
 			DoNothing: true,
 		}).
 		Save(&tmp).Error
@@ -143,15 +143,19 @@ func (uc *SpiderUseCase) invalidateCache(userId int64) {
 	_ = rdb.Del(
 		ctx,
 		fmt.Sprintf("core:submit_log:user:%d", userId),
+		"core:submit_log:user:-1",
 		fmt.Sprintf("user:%d:lastSubmitTime", userId),
 		fmt.Sprintf("statistic:period:%d", userId), // 用户统计缓存
 		fmt.Sprintf("statistic:period:-1"),         // 全局统计缓存
+		fmt.Sprintf("statistic:platform-period:%d", userId),
+		"statistic:platform-period:-1",
 		// Contest log 精确 key
 		fmt.Sprintf("core:contest_log:user:%d", userId),
 	).Err()
 
 	// 2. 模糊前缀，必须 SCAN
 	patterns := []string{
+		"core:submit_log:detail:*",
 		fmt.Sprintf("statistic:heatmap:%d:*:*:*", userId),
 		"statistic:heatmap:0:*:*:*",
 		// Contest log 相关的模糊 key

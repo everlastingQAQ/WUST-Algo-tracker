@@ -18,8 +18,8 @@ data:
     write_timeout: 1s
 
 agent:
-  model: ${ARK_MODEL}
-  secret: ${ARK_SECRET}
+  model: ${AI_MODEL}
+  secret: ${AI_API_KEY}
 
 smtp:
   host: ${SMTP_HOST}
