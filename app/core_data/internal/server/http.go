@@ -13,7 +13,6 @@ import (
 	"encoding/json"
 	nethttp "net/http"
 	"strconv"
-	"time"
 
 	"github.com/go-kratos/kratos/v2/log"
 	"github.com/go-kratos/kratos/v2/middleware/auth/jwt"
@@ -32,7 +31,6 @@ func NewWhiteListMatcher() selector.MatchFunc {
 		"/api.core.v1.statistic.Statistic/Heatmap":           "",
 		"/api.core.v1.statistic.Statistic/PeriodCount":       "",
 		"/v1/core/statistic/platform-period":                 "",
-		"/v1/core/statistic/compare":                         "",
 		"/api.core.v1.bulletin.Bulletin/Get":                 "",
 		"/api.core.v1.bulletin.Bulletin/List":                "",
 	}
@@ -88,48 +86,6 @@ func NewHTTPServer(c *conf.Server, logger log.Logger, submitService *service.Sub
 		}
 
 		data, err := statisticService.PlatformPeriod(r.Context(), userId)
-		w.Header().Set("Content-Type", "application/json")
-		if err != nil {
-			w.WriteHeader(nethttp.StatusInternalServerError)
-			_ = json.NewEncoder(w).Encode(map[string]any{"code": 500, "message": err.Error()})
-			return
-		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": data})
-	})
-	srv.HandleFunc("/v1/core/statistic/compare", func(w nethttp.ResponseWriter, r *nethttp.Request) {
-		if r.Method != nethttp.MethodGet {
-			w.WriteHeader(nethttp.StatusMethodNotAllowed)
-			return
-		}
-
-		parseUserId := func(name string) (int64, error) {
-			return strconv.ParseInt(r.URL.Query().Get(name), 10, 64)
-		}
-		leftUserId, err := parseUserId("leftUserId")
-		if err != nil || leftUserId <= 0 {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(nethttp.StatusBadRequest)
-			_ = json.NewEncoder(w).Encode(map[string]any{"code": 400, "message": "leftUserId参数错误"})
-			return
-		}
-		rightUserId, err := parseUserId("rightUserId")
-		if err != nil || rightUserId <= 0 {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(nethttp.StatusBadRequest)
-			_ = json.NewEncoder(w).Encode(map[string]any{"code": 400, "message": "rightUserId参数错误"})
-			return
-		}
-
-		startDate := r.URL.Query().Get("startDate")
-		if startDate == "" {
-			startDate = "20230101"
-		}
-		endDate := r.URL.Query().Get("endDate")
-		if endDate == "" {
-			endDate = time.Now().Format("20060102")
-		}
-
-		data, err := statisticService.Compare(r.Context(), leftUserId, rightUserId, startDate, endDate)
 		w.Header().Set("Content-Type", "application/json")
 		if err != nil {
 			w.WriteHeader(nethttp.StatusInternalServerError)

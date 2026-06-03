@@ -8,7 +8,6 @@ import (
 	"cwxu-algo/api/core/v1/statistic"
 	data2 "cwxu-algo/app/common/data"
 	"cwxu-algo/app/core_data/internal/data/dal"
-	"cwxu-algo/app/core_data/internal/data/model"
 
 	"github.com/go-kratos/kratos/v2/errors"
 	"github.com/redis/go-redis/v9"
@@ -20,22 +19,6 @@ const statisticCacheTTL = time.Minute
 type StatisticUseCase struct {
 	dal *dal.StatisticDal
 	rdb *redis.Client
-}
-
-type CompareSideData struct {
-	UserId        int64
-	Submit        dal.PeriodSubmitCount
-	Ac            dal.PeriodAcCount
-	Platform      []dal.PlatformPeriodCount
-	HeatmapSubmit []dal.DailyCount
-	HeatmapAc     []dal.DailyCount
-	RecentSubmits []model.SubmitLog
-}
-
-type CompareData struct {
-	Left    CompareSideData
-	Right   CompareSideData
-	Overlap dal.AcOverlapCount
 }
 
 // NewStatisticUseCase 创建统计业务逻辑层
@@ -142,65 +125,4 @@ func (uc *StatisticUseCase) PlatformPeriodCount(ctx context.Context, userId int6
 	}
 
 	return *result, nil
-}
-
-func (uc *StatisticUseCase) Compare(ctx context.Context, leftUserId int64, rightUserId int64, startDate string, endDate string) (*CompareData, error) {
-	if leftUserId <= 0 || rightUserId <= 0 {
-		return nil, errors.BadRequest("参数错误", "用户ID参数错误")
-	}
-	if startDate == "" || endDate == "" {
-		return nil, errors.BadRequest("参数错误", "日期参数错误")
-	}
-
-	left, err := uc.compareSide(ctx, leftUserId, startDate, endDate)
-	if err != nil {
-		return nil, errors.InternalServer("内部错误", err.Error())
-	}
-	right, err := uc.compareSide(ctx, rightUserId, startDate, endDate)
-	if err != nil {
-		return nil, errors.InternalServer("内部错误", err.Error())
-	}
-	overlap, err := uc.dal.GetAcOverlapCount(leftUserId, rightUserId)
-	if err != nil {
-		return nil, errors.InternalServer("内部错误", err.Error())
-	}
-
-	return &CompareData{
-		Left:    left,
-		Right:   right,
-		Overlap: overlap,
-	}, nil
-}
-
-func (uc *StatisticUseCase) compareSide(ctx context.Context, userId int64, startDate string, endDate string) (CompareSideData, error) {
-	platforms := []string{"AtCoder", "NowCoder", "LuoGu", "CodeForces", "QOJ"}
-	submit, ac, err := uc.dal.GetPeriodCount(userId)
-	if err != nil {
-		return CompareSideData{}, err
-	}
-	platform, err := uc.dal.GetPlatformPeriodCount(userId, platforms)
-	if err != nil {
-		return CompareSideData{}, err
-	}
-	heatmapSubmit, err := uc.dal.HeatmapQuery(ctx, startDate, endDate, userId, false)
-	if err != nil {
-		return CompareSideData{}, err
-	}
-	heatmapAc, err := uc.dal.HeatmapQuery(ctx, startDate, endDate, userId, true)
-	if err != nil {
-		return CompareSideData{}, err
-	}
-	recentSubmits, err := uc.dal.GetRecentSubmitLogs(userId, 10)
-	if err != nil {
-		return CompareSideData{}, err
-	}
-	return CompareSideData{
-		UserId:        userId,
-		Submit:        submit,
-		Ac:            ac,
-		Platform:      platform,
-		HeatmapSubmit: heatmapSubmit,
-		HeatmapAc:     heatmapAc,
-		RecentSubmits: recentSubmits,
-	}, nil
 }
