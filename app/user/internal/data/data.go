@@ -40,6 +40,8 @@ func migrateModels(db *gorm.DB) {
 		&model.User{},
 		&model.Group{},
 		&model.GroupInvite{},
+		&model.DirectMessageThread{},
+		&model.DirectMessage{},
 		&model.SystemConfig{},
 	)
 	if err != nil {

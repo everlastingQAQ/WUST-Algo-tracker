@@ -46,6 +46,7 @@ func NewHTTPServer(
 	profileService *service.ProfileService,
 	groupService *service.GroupService,
 	roleService *service.RoleService,
+	messageService *service.MessageService,
 	logger log.Logger,
 
 ) *http.Server {
@@ -74,6 +75,7 @@ func NewHTTPServer(
 	registerProfileExtraHTTPServer(srv, profileService)
 	registerSystemHTTPServer(srv, authService)
 	registerTeamHTTPServer(srv, groupService)
+	registerMessageHTTPServer(srv, messageService)
 	return srv
 }
 
@@ -88,6 +90,12 @@ const (
 	operationSystemInviteCode  = "/api.user.v1.System/RegisterInviteCode"
 	operationChangePassword    = "/api.user.v1.Profile/ChangePassword"
 	operationDeleteUser        = "/api.user.v1.Profile/DeleteUser"
+	operationMessageList       = "/api.user.v1.Message/Conversations"
+	operationMessageThread     = "/api.user.v1.Message/Thread"
+	operationMessageSend       = "/api.user.v1.Message/Send"
+	operationMessageRead       = "/api.user.v1.Message/Read"
+	operationMessageUnread     = "/api.user.v1.Message/UnreadCount"
+	operationMessageBroadcast  = "/api.user.v1.Message/Broadcast"
 )
 
 func registerSystemHTTPServer(s *http.Server, srv *service.AuthService) {
@@ -250,6 +258,96 @@ func registerTeamHTTPServer(s *http.Server, srv *service.GroupService) {
 		http.SetOperation(ctx, operationTeamInviteRespond)
 		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
 			return srv.RespondTeamInvite(ctx, req.(*service.TeamRespondInviteRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		return ctx.Result(200, out)
+	})
+}
+
+func registerMessageHTTPServer(s *http.Server, srv *service.MessageService) {
+	r := s.Route("/")
+	r.GET("/v1/user/message/conversations", func(ctx http.Context) error {
+		var in service.ConversationListRequest
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, operationMessageList)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.Conversations(ctx, req.(*service.ConversationListRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		return ctx.Result(200, out)
+	})
+	r.GET("/v1/user/message/thread", func(ctx http.Context) error {
+		var in service.ThreadMessagesRequest
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, operationMessageThread)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.Thread(ctx, req.(*service.ThreadMessagesRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		return ctx.Result(200, out)
+	})
+	r.POST("/v1/user/message/send", func(ctx http.Context) error {
+		var in service.SendMessageRequest
+		if err := ctx.Bind(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, operationMessageSend)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.Send(ctx, req.(*service.SendMessageRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		return ctx.Result(200, out)
+	})
+	r.POST("/v1/user/message/read", func(ctx http.Context) error {
+		var in service.MarkMessageReadRequest
+		if err := ctx.Bind(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, operationMessageRead)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.MarkRead(ctx, req.(*service.MarkMessageReadRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		return ctx.Result(200, out)
+	})
+	r.GET("/v1/user/message/unread-count", func(ctx http.Context) error {
+		http.SetOperation(ctx, operationMessageUnread)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.UnreadCount(ctx)
+		})
+		out, err := h(ctx, nil)
+		if err != nil {
+			return err
+		}
+		return ctx.Result(200, out)
+	})
+	r.POST("/v1/user/message/broadcast", func(ctx http.Context) error {
+		var in service.BroadcastMessageRequest
+		if err := ctx.Bind(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, operationMessageBroadcast)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.Broadcast(ctx, req.(*service.BroadcastMessageRequest))
 		})
 		out, err := h(ctx, &in)
 		if err != nil {

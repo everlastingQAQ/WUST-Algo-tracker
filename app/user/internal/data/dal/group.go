@@ -77,7 +77,7 @@ func (d *GroupDal) GetWithUsers(ctx context.Context, id int64) (*model.Group, []
 	if err != nil {
 		return nil, nil, err
 	}
-	log.Info("group: %v", group)
+	log.Infof("group: %v", group)
 	return &group, group.Users, nil
 }
 
