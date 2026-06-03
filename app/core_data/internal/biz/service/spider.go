@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/go-kratos/kratos/v2/log"
+	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
@@ -24,39 +25,58 @@ func NewSpiderUseCase(data *data.Data) *SpiderUseCase {
 }
 
 // LoadData 加载数据
-func (uc *SpiderUseCase) LoadData(userId int64, needAll bool) error {
+func (uc *SpiderUseCase) LoadData(jobId int64, userId int64, needAll bool) error {
 	// 无论如何，函数退出前一定删缓存
 	defer uc.invalidateCache(userId)
 
 	var platforms []model.Platform
 	if err := uc.data.DB.Where("user_id = ?", userId).Find(&platforms).Error; err != nil {
+		uc.finishJob(jobId, "failed", err.Error())
 		return err
 	}
 
+	uc.startJob(jobId, len(platforms))
+	var failed []string
 	for _, plat := range platforms {
-		uc.loadOnePlatform(userId, plat, needAll)
+		uc.setCurrentPlatform(jobId, plat.Platform)
+		count, err := uc.loadOnePlatform(userId, plat, needAll)
+		uc.finishPlatform(jobId, plat.Platform)
+		if err != nil {
+			failed = append(failed, fmt.Sprintf("%s: %v", plat.Platform, err))
+			uc.markPlatformFailed(userId, plat, err)
+			continue
+		}
+		uc.markPlatformSuccess(userId, plat, count)
 	}
 
+	if len(failed) > 0 {
+		errText := strings.Join(failed, "; ")
+		uc.finishJob(jobId, "failed", errText)
+		return fmt.Errorf("%s", errText)
+	}
+
+	uc.finishJob(jobId, "success", "")
 	return nil
 }
-func (uc *SpiderUseCase) fetchAndSave(userId int64, plat model.Platform, needAll bool) error {
+
+func (uc *SpiderUseCase) fetchAndSave(userId int64, plat model.Platform, needAll bool) (int, error) {
 	p, ok := spider.Get(plat.Platform)
 	if !ok {
-		return fmt.Errorf("平台插件不存在")
+		return 0, fmt.Errorf("平台插件不存在")
 	}
 	sbFetch, ok := p.(spider.SubmitLogFetcher)
 	if !ok {
-		return fmt.Errorf("平台未实现 SubmitLogFetcher")
+		return 0, fmt.Errorf("平台未实现 SubmitLogFetcher")
 	}
 	tmp, err := sbFetch.FetchSubmitLog(userId, plat.Username, needAll)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	if len(tmp) == 0 {
-		return nil
+		return 0, nil
 	}
 
-	return uc.data.DB.
+	err = uc.data.DB.
 		Clauses(clause.OnConflict{
 			Columns: []clause.Column{{Name: "platform"}, {Name: "submit_id"}},
 			DoUpdates: clause.AssignmentColumns([]string{
@@ -69,6 +89,7 @@ func (uc *SpiderUseCase) fetchAndSave(userId int64, plat model.Platform, needAll
 			}),
 		}).
 		Save(&tmp).Error
+	return len(tmp), err
 }
 
 func (uc *SpiderUseCase) fetchAndSaveContest(userId int64, plat model.Platform, needAll bool) error {
@@ -96,19 +117,22 @@ func (uc *SpiderUseCase) fetchAndSaveContest(userId int64, plat model.Platform, 
 		Save(&tmp).Error
 }
 
-func (uc *SpiderUseCase) loadOnePlatform(userId int64, plat model.Platform, needAll bool) {
+func (uc *SpiderUseCase) loadOnePlatform(userId int64, plat model.Platform, needAll bool) (int, error) {
+	uc.markPlatformRunning(userId, plat)
 	// 限制最大重试次数
 	maxRetries := 12
+	var lastErr error
 	for i := 0; i < maxRetries; i++ {
-		err := uc.fetchAndSave(userId, plat, needAll)
+		count, err := uc.fetchAndSave(userId, plat, needAll)
 		if contestErr := uc.fetchAndSaveContest(userId, plat, needAll); contestErr != nil {
 			log.Errorf("Spider: fetchAndSaveContest %s %s 失败: %v", plat.Platform, plat.Username, contestErr)
 		}
 		if err == nil {
 			log.Infof("Spider: %s %s 成功", plat.Platform, plat.Username)
 			uc.invalidateCache(userId)
-			return
+			return count, nil
 		}
+		lastErr = err
 		if strings.Contains(err.Error(), "平台") {
 			log.Errorf(
 				"Spider: %s %s 失败: %v",
@@ -116,7 +140,7 @@ func (uc *SpiderUseCase) loadOnePlatform(userId int64, plat model.Platform, need
 				plat.Username,
 				err,
 			)
-			return
+			return 0, err
 		}
 		log.Errorf(
 			"Spider: %s %s 失败 (重试 %d/%d): %v",
@@ -128,17 +152,108 @@ func (uc *SpiderUseCase) loadOnePlatform(userId int64, plat model.Platform, need
 		)
 		// needAll=false，不重试
 		if !needAll {
-			return
+			return 0, err
 		}
 		// needAll=true，重试最多12次
 		time.Sleep(5 * time.Second)
 	}
-	log.Errorf(
-		"Spider: %s %s 达到最大重试次数 %d",
-		plat.Platform,
-		plat.Username,
-		maxRetries,
-	)
+	if lastErr == nil {
+		lastErr = fmt.Errorf("达到最大重试次数 %d", maxRetries)
+	}
+	log.Errorf("Spider: %s %s 达到最大重试次数 %d", plat.Platform, plat.Username, maxRetries)
+	return 0, lastErr
+}
+
+func (uc *SpiderUseCase) startJob(jobId int64, totalPlatforms int) {
+	if jobId <= 0 {
+		return
+	}
+	now := time.Now()
+	_ = uc.data.DB.Model(&model.SpiderRefreshJob{}).Where("id = ?", jobId).Updates(map[string]interface{}{
+		"status":             "running",
+		"started_at":         &now,
+		"total_platforms":    int32(totalPlatforms),
+		"finished_platforms": int32(0),
+		"error":              "",
+	}).Error
+}
+
+func (uc *SpiderUseCase) finishJob(jobId int64, status string, errText string) {
+	if jobId <= 0 {
+		return
+	}
+	now := time.Now()
+	_ = uc.data.DB.Model(&model.SpiderRefreshJob{}).Where("id = ?", jobId).Updates(map[string]interface{}{
+		"status":      status,
+		"error":       errText,
+		"finished_at": &now,
+	}).Error
+}
+
+func (uc *SpiderUseCase) finishPlatform(jobId int64, platform string) {
+	if jobId <= 0 {
+		return
+	}
+	_ = uc.data.DB.Model(&model.SpiderRefreshJob{}).Where("id = ?", jobId).Updates(map[string]interface{}{
+		"current_platform":   platform,
+		"finished_platforms": gorm.Expr("finished_platforms + 1"),
+	}).Error
+}
+
+func (uc *SpiderUseCase) setCurrentPlatform(jobId int64, platform string) {
+	if jobId <= 0 {
+		return
+	}
+	_ = uc.data.DB.Model(&model.SpiderRefreshJob{}).Where("id = ?", jobId).Update("current_platform", platform).Error
+}
+
+func (uc *SpiderUseCase) upsertPlatformStatus(userId int64, plat model.Platform, updates map[string]interface{}) {
+	status := model.SpiderSyncStatus{
+		UserID:   userId,
+		Platform: plat.Platform,
+		Username: plat.Username,
+	}
+	if err := uc.data.DB.Where("user_id = ? AND platform = ?", userId, plat.Platform).FirstOrCreate(&status).Error; err != nil {
+		log.Errorf("Spider: sync status firstOrCreate failed: %v", err)
+		return
+	}
+	if err := uc.data.DB.Model(&status).Updates(updates).Error; err != nil {
+		log.Errorf("Spider: sync status update failed: %v", err)
+	}
+}
+
+func (uc *SpiderUseCase) markPlatformRunning(userId int64, plat model.Platform) {
+	now := time.Now()
+	uc.upsertPlatformStatus(userId, plat, map[string]interface{}{
+		"username":        plat.Username,
+		"status":          "running",
+		"last_started_at": &now,
+		"last_error":      "",
+	})
+}
+
+func (uc *SpiderUseCase) markPlatformSuccess(userId int64, plat model.Platform, count int) {
+	now := time.Now()
+	uc.upsertPlatformStatus(userId, plat, map[string]interface{}{
+		"username":            plat.Username,
+		"status":              "success",
+		"last_finished_at":    &now,
+		"last_success_at":     &now,
+		"last_fetched_count":  int64(count),
+		"last_error":          "",
+		"consecutive_failure": int64(0),
+	})
+}
+
+func (uc *SpiderUseCase) markPlatformFailed(userId int64, plat model.Platform, err error) {
+	now := time.Now()
+	uc.upsertPlatformStatus(userId, plat, map[string]interface{}{
+		"username":            plat.Username,
+		"status":              "failed",
+		"last_finished_at":    &now,
+		"last_error":          err.Error(),
+		"consecutive_failure": gorm.Expr("spider_sync_statuses.consecutive_failure + 1"),
+	})
 }
 func (uc *SpiderUseCase) invalidateCache(userId int64) {
 	ctx := context.Background()

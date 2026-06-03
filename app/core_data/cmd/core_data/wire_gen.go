@@ -38,7 +38,7 @@ func wireApp(confServer *conf.Server, confData *conf.Data, logger log.Logger) (*
 		cleanup()
 		return nil, nil, err
 	}
-	spiderTask := task.NewSpiderTask(rabbitMQ)
+	spiderTask := task.NewSpiderTask(rabbitMQ, dataData)
 	spiderService := service.NewSpiderService(dataData, spiderTask)
 	spiderDal := dal.NewSpiderDal(dataData)
 	submitLogService := service.NewSubmitLogService(spiderDal, dataData)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"cwxu-algo/app/common/conf"
 	"cwxu-algo/app/core_data/internal/data"
+	"os"
 	"testing"
 	"time"
 
@@ -11,6 +12,9 @@ import (
 )
 
 func TestSpiderDal(t *testing.T) {
+	if os.Getenv("RUN_INTEGRATION_TESTS") != "1" {
+		t.Skip("set RUN_INTEGRATION_TESTS=1 to run external database integration test")
+	}
 	c := conf.Data{
 		Database: &conf.Data_Database{
 			Driver: "postgres",
@@ -25,6 +29,9 @@ func TestSpiderDal(t *testing.T) {
 	}
 	d, _, _ := data.NewData(&c)
 	dal := NewSpiderDal(d)
-	r := dal.GetByUserId(context.Background(), 1, -1, 10)
+	r, err := dal.GetByUserId(context.Background(), 1, -1, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
 	t.Log(r)
 }

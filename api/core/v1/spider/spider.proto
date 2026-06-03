@@ -21,6 +21,21 @@ service Spider {
       body: "*"
     };
   }
+  rpc Job (JobReq) returns (JobRes) {
+    option (google.api.http) = {
+      get: "/v1/core/spider/job"
+    };
+  }
+  rpc Jobs (JobsReq) returns (JobsRes) {
+    option (google.api.http) = {
+      get: "/v1/core/spider/jobs"
+    };
+  }
+  rpc Status (StatusReq) returns (StatusRes) {
+    option (google.api.http) = {
+      get: "/v1/core/spider/status"
+    };
+  }
 }
 
 message SetSpiderReq {
@@ -53,5 +68,73 @@ message UpdateReq {
 message UpdateRes {
   int64 code = 1;
   string message = 2;
+  int64 jobId = 3;
 }
 
+message JobReq {
+  int64 jobId = 1;
+}
+
+message JobInfo {
+  int64 jobId = 1;
+  int64 userId = 2;
+  int64 requesterId = 3;
+  string source = 4;
+  string status = 5;
+  bool needAll = 6;
+  string currentPlatform = 7;
+  int32 totalPlatforms = 8;
+  int32 finishedPlatforms = 9;
+  string error = 10;
+  int64 createdAt = 11;
+  int64 startedAt = 12;
+  int64 finishedAt = 13;
+  int64 updatedAt = 14;
+}
+
+message JobRes {
+  int64 code = 1;
+  string message = 2;
+  JobInfo data = 3;
+}
+
+message JobsReq {
+  string scope = 1;
+  string status = 2;
+  int64 page = 3;
+  int64 pageSize = 4;
+  int64 userId = 5;
+}
+
+message JobsRes {
+  int64 code = 1;
+  string message = 2;
+  repeated JobInfo data = 3;
+  int64 total = 4;
+}
+
+message StatusReq {
+  int64 userId = 1;
+}
+
+message SyncStatusInfo {
+  string platform = 1;
+  string username = 2;
+  string status = 3;
+  int64 lastStartedAt = 4;
+  int64 lastFinishedAt = 5;
+  int64 lastSuccessAt = 6;
+  string lastError = 7;
+  int64 lastFetchedCount = 8;
+  bool isStale = 9;
+  bool canViewError = 10;
+  int64 updatedAt = 11;
+}
+
+message StatusRes {
+  int64 code = 1;
+  string message = 2;
+  repeated SyncStatusInfo data = 3;
+  int64 staleAfterSeconds = 4;
+  int64 generatedAt = 5;
+}

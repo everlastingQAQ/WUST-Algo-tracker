@@ -3,6 +3,7 @@ package test
 import (
 	"context"
 	"log"
+	"os"
 	"testing"
 
 	"github.com/go-kratos/blades"
@@ -10,6 +11,9 @@ import (
 )
 
 func TestAgent(t *testing.T) {
+	if os.Getenv("RUN_INTEGRATION_TESTS") != "1" {
+		t.Skip("set RUN_INTEGRATION_TESTS=1 to run external agent integration test")
+	}
 	model := openai.NewModel("doubao-seed-1-6-flash-250828", openai.Config{
 		BaseURL: "https://ark.cn-beijing.volces.com/api/v3",
 		APIKey:  "",

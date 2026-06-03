@@ -209,6 +209,56 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.core.v1.contest_log.GetContestRankingRes'
+    /v1/core/spider/job:
+        get:
+            tags:
+                - Spider
+            operationId: Spider_Job
+            parameters:
+                - name: jobId
+                  in: query
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.core.v1.spider.JobRes'
+    /v1/core/spider/jobs:
+        get:
+            tags:
+                - Spider
+            operationId: Spider_Jobs
+            parameters:
+                - name: scope
+                  in: query
+                  schema:
+                    type: string
+                - name: status
+                  in: query
+                  schema:
+                    type: string
+                - name: page
+                  in: query
+                  schema:
+                    type: string
+                - name: pageSize
+                  in: query
+                  schema:
+                    type: string
+                - name: userId
+                  in: query
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.core.v1.spider.JobsRes'
     /v1/core/spider/set:
         post:
             tags:
@@ -227,6 +277,23 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.core.v1.spider.SetSpiderRep'
+    /v1/core/spider/status:
+        get:
+            tags:
+                - Spider
+            operationId: Spider_Status
+            parameters:
+                - name: userId
+                  in: query
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.core.v1.spider.StatusRes'
     /v1/core/spider/update:
         post:
             tags:
@@ -807,6 +874,61 @@ components:
                     type: integer
                     format: int32
             description: 排行榜项
+        api.core.v1.spider.JobInfo:
+            type: object
+            properties:
+                jobId:
+                    type: string
+                userId:
+                    type: string
+                requesterId:
+                    type: string
+                source:
+                    type: string
+                status:
+                    type: string
+                needAll:
+                    type: boolean
+                currentPlatform:
+                    type: string
+                totalPlatforms:
+                    type: integer
+                    format: int32
+                finishedPlatforms:
+                    type: integer
+                    format: int32
+                error:
+                    type: string
+                createdAt:
+                    type: string
+                startedAt:
+                    type: string
+                finishedAt:
+                    type: string
+                updatedAt:
+                    type: string
+        api.core.v1.spider.JobRes:
+            type: object
+            properties:
+                code:
+                    type: string
+                message:
+                    type: string
+                data:
+                    $ref: '#/components/schemas/api.core.v1.spider.JobInfo'
+        api.core.v1.spider.JobsRes:
+            type: object
+            properties:
+                code:
+                    type: string
+                message:
+                    type: string
+                data:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/api.core.v1.spider.JobInfo'
+                total:
+                    type: string
         api.core.v1.spider.SetSpiderRep:
             type: object
             properties:
@@ -824,6 +946,46 @@ components:
                     type: string
                 username:
                     type: string
+        api.core.v1.spider.StatusRes:
+            type: object
+            properties:
+                code:
+                    type: string
+                message:
+                    type: string
+                data:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/api.core.v1.spider.SyncStatusInfo'
+                staleAfterSeconds:
+                    type: string
+                generatedAt:
+                    type: string
+        api.core.v1.spider.SyncStatusInfo:
+            type: object
+            properties:
+                platform:
+                    type: string
+                username:
+                    type: string
+                status:
+                    type: string
+                lastStartedAt:
+                    type: string
+                lastFinishedAt:
+                    type: string
+                lastSuccessAt:
+                    type: string
+                lastError:
+                    type: string
+                lastFetchedCount:
+                    type: string
+                isStale:
+                    type: boolean
+                canViewError:
+                    type: boolean
+                updatedAt:
+                    type: string
         api.core.v1.spider.UpdateReq:
             type: object
             properties:
@@ -835,6 +997,8 @@ components:
                 code:
                     type: string
                 message:
+                    type: string
+                jobId:
                     type: string
         api.core.v1.statistic.AcCount:
             type: object
@@ -1152,6 +1316,8 @@ components:
                 email:
                     type: string
                 groupId:
+                    type: string
+                inviteCode:
                     type: string
         api.user.v1.RegisterRes:
             type: object

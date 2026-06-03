@@ -105,7 +105,7 @@ func (t *CronTask) Do() {
 		// 获取所有platform表中存在的userid
 		userIds := t.getUserIds()
 		for _, v := range userIds {
-			t.spider.Do(v, false)
+			_, _ = t.spider.Do(v, false, "cron", 0)
 		}
 	})
 	_, _ = t.cron.AddFunc("30 7 * * *", func() {

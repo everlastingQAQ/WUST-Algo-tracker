@@ -3,10 +3,14 @@ package test
 import (
 	"cwxu-algo/app/core_data/internal/spider"
 	_ "cwxu-algo/app/core_data/internal/spider/platform"
+	"os"
 	"testing"
 )
 
 func TestSpider(t *testing.T) {
+	if os.Getenv("RUN_INTEGRATION_TESTS") != "1" {
+		t.Skip("set RUN_INTEGRATION_TESTS=1 to run external spider integration test")
+	}
 	pms := []string{spider.CodeForces}
 	for _, pm := range pms {
 		t.Run(pm, func(t *testing.T) {
