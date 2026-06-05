@@ -197,6 +197,28 @@ func (g *GroupService) RemoveTeamMember(ctx context.Context, req *TeamRemoveMemb
 	return &TeamSuccessReply{Success: true, Message: "成员已移出团队"}, nil
 }
 
+func (g *GroupService) LeaveTeam(ctx context.Context) (*TeamSuccessReply, error) {
+	current := auth.GetCurrentUser(ctx)
+	if current == nil || current.UserID == 0 {
+		return nil, errors.Unauthorized("未登录", "请先登录")
+	}
+	if err := g.groupDal.LeaveTeam(ctx, int64(current.UserID)); err != nil {
+		return nil, errors.BadRequest("退出失败", err.Error())
+	}
+	return &TeamSuccessReply{Success: true, Message: "已退出团队"}, nil
+}
+
+func (g *GroupService) DisbandTeam(ctx context.Context) (*TeamSuccessReply, error) {
+	current := auth.GetCurrentUser(ctx)
+	if current == nil || current.UserID == 0 {
+		return nil, errors.Unauthorized("未登录", "请先登录")
+	}
+	if err := g.groupDal.DisbandTeam(ctx, int64(current.UserID)); err != nil {
+		return nil, errors.BadRequest("解散失败", err.Error())
+	}
+	return &TeamSuccessReply{Success: true, Message: "团队已解散"}, nil
+}
+
 func (g *GroupService) ListTeamInvites(ctx context.Context) (*TeamInviteListReply, error) {
 	current := auth.GetCurrentUser(ctx)
 	if current == nil || current.UserID == 0 {

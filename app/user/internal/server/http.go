@@ -85,6 +85,8 @@ const (
 	operationTeamUpdate        = "/api.user.v1.Team/Update"
 	operationTeamInvite        = "/api.user.v1.Team/Invite"
 	operationTeamRemoveMember  = "/api.user.v1.Team/RemoveMember"
+	operationTeamLeave         = "/api.user.v1.Team/Leave"
+	operationTeamDisband       = "/api.user.v1.Team/Disband"
 	operationTeamInviteList    = "/api.user.v1.Team/InviteList"
 	operationTeamInviteRespond = "/api.user.v1.Team/InviteRespond"
 	operationSystemInviteCode  = "/api.user.v1.System/RegisterInviteCode"
@@ -234,6 +236,28 @@ func registerTeamHTTPServer(s *http.Server, srv *service.GroupService) {
 			return srv.RemoveTeamMember(ctx, req.(*service.TeamRemoveMemberRequest))
 		})
 		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		return ctx.Result(200, out)
+	})
+	r.POST("/v1/user/team/leave", func(ctx http.Context) error {
+		http.SetOperation(ctx, operationTeamLeave)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.LeaveTeam(ctx)
+		})
+		out, err := h(ctx, nil)
+		if err != nil {
+			return err
+		}
+		return ctx.Result(200, out)
+	})
+	r.POST("/v1/user/team/disband", func(ctx http.Context) error {
+		http.SetOperation(ctx, operationTeamDisband)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.DisbandTeam(ctx)
+		})
+		out, err := h(ctx, nil)
 		if err != nil {
 			return err
 		}

@@ -322,6 +322,95 @@ func (d *GroupDal) RemoveTeamMember(ctx context.Context, operatorId, memberId in
 	})
 }
 
+func (d *GroupDal) LeaveTeam(ctx context.Context, userId int64) error {
+	err := data2.UpdateCacheDal(ctx, d.rdb, fmt.Sprintf("user:%d:profile", userId), func() error {
+		return d.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			var user model.User
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&user, userId).Error; err != nil {
+				return fmt.Errorf("用户不存在")
+			}
+			if user.GroupId == 0 {
+				return fmt.Errorf("你当前没有团队")
+			}
+			var group model.Group
+			if err := tx.First(&group, user.GroupId).Error; err != nil {
+				return fmt.Errorf("团队不存在")
+			}
+			if err := d.ensureGroupOwner(ctx, tx, &group); err != nil {
+				return err
+			}
+			if group.OwnerId == userId {
+				return fmt.Errorf("队长不能直接退出团队，请先解散团队")
+			}
+			if err := tx.Model(&model.User{}).Where("id = ?", userId).Update("group_id", 0).Error; err != nil {
+				return fmt.Errorf("退出团队失败: %w", err)
+			}
+			if err := tx.Model(&model.GroupInvite{}).
+				Where("invitee_id = ? AND status = ?", userId, "pending").
+				Update("status", "rejected").Error; err != nil {
+				return fmt.Errorf("关闭待处理邀请失败: %w", err)
+			}
+			return nil
+		})
+	})
+	if err != nil {
+		return err
+	}
+	d.clearUserCache(ctx, userId)
+	return nil
+}
+
+func (d *GroupDal) DisbandTeam(ctx context.Context, ownerId int64) error {
+	var memberIds []int64
+	err := d.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var owner model.User
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&owner, ownerId).Error; err != nil {
+			return fmt.Errorf("操作用户不存在")
+		}
+		if owner.GroupId == 0 {
+			return fmt.Errorf("你当前没有团队")
+		}
+
+		var group model.Group
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&group, owner.GroupId).Error; err != nil {
+			return fmt.Errorf("团队不存在")
+		}
+		if err := d.ensureGroupOwner(ctx, tx, &group); err != nil {
+			return err
+		}
+		if group.OwnerId != ownerId {
+			return fmt.Errorf("只有队长可以解散团队")
+		}
+
+		if err := tx.Model(&model.User{}).
+			Where("group_id = ?", owner.GroupId).
+			Pluck("id", &memberIds).Error; err != nil {
+			return fmt.Errorf("查询团队成员失败: %w", err)
+		}
+		if err := tx.Model(&model.User{}).
+			Where("group_id = ?", owner.GroupId).
+			Update("group_id", 0).Error; err != nil {
+			return fmt.Errorf("重置团队成员失败: %w", err)
+		}
+		if err := tx.Model(&model.GroupInvite{}).
+			Where("group_id = ? AND status = ?", owner.GroupId, "pending").
+			Update("status", "rejected").Error; err != nil {
+			return fmt.Errorf("关闭团队邀请失败: %w", err)
+		}
+		if err := tx.Delete(&model.Group{}, owner.GroupId).Error; err != nil {
+			return fmt.Errorf("删除团队失败: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	for _, memberId := range memberIds {
+		d.clearUserCache(ctx, memberId)
+	}
+	return nil
+}
+
 type TeamInviteView struct {
 	ID          uint
 	GroupId     int64
