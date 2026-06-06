@@ -13,6 +13,7 @@ import (
 
 type MessageService struct {
 	messageDal *dal.MessageDal
+	profileDal *dal.ProfileDal
 }
 
 type MessageUserReply struct {
@@ -106,8 +107,8 @@ type BroadcastMessageReply struct {
 	Count   int64  `json:"count"`
 }
 
-func NewMessageService(messageDal *dal.MessageDal) *MessageService {
-	return &MessageService{messageDal: messageDal}
+func NewMessageService(messageDal *dal.MessageDal, profileDal *dal.ProfileDal) *MessageService {
+	return &MessageService{messageDal: messageDal, profileDal: profileDal}
 }
 
 func currentUserId(ctx context.Context) (int64, error) {
@@ -295,7 +296,11 @@ func (s *MessageService) Broadcast(ctx context.Context, req *BroadcastMessageReq
 	if current == nil || current.UserID == 0 {
 		return nil, errors.Unauthorized("未登录", "请先登录")
 	}
-	if current.RoleID != permission.RoleAdmin && current.RoleID != permission.RoleCoach {
+	sender, err := s.profileDal.GetById(ctx, int64(current.UserID))
+	if err != nil {
+		return nil, errors.Forbidden("权限不足", "用户不存在或已被禁用")
+	}
+	if sender.RoleID != permission.RoleAdmin && sender.RoleID != permission.RoleCoach {
 		return nil, errors.Forbidden("权限不足", "仅管理员或教练可以群发消息")
 	}
 	content, contentErr := normalizeMessageContent(req.Content)
