@@ -183,15 +183,19 @@ func (p *ProfileService) ChangePassword(ctx context.Context, req *ChangePassword
 		return nil, errors.Forbidden("权限不足", "只能修改自己的密码")
 	}
 
-	if !isAdmin {
+	target, err := p.profileDal.GetById(ctx, req.UserId)
+	if err != nil {
+		return nil, errors.BadRequest("用户不存在", "用户不存在")
+	}
+	if target.RoleID == permission.RoleAdmin && !isSelf {
+		return nil, errors.Forbidden("权限不足", "不能重置其他管理员密码")
+	}
+
+	if isSelf {
 		if req.OldPassword == "" {
 			return nil, errors.BadRequest("参数错误", "请输入旧密码")
 		}
-		pf, err := p.profileDal.GetById(ctx, req.UserId)
-		if err != nil {
-			return nil, errors.InternalServer("内部错误", err.Error())
-		}
-		if pf.Password != req.OldPassword {
+		if target.Password != req.OldPassword {
 			return &ChangePasswordReply{Success: false, Message: "旧密码错误"}, nil
 		}
 	}

@@ -27,7 +27,7 @@ func (r *RoleService) List(ctx context.Context, req *role.ListReq) (*role.ListRe
 }
 
 // SetUserRole 设置用户角色
-// 权限规则：仅管理员可操作；不能将用户提升到比自己更高或同级权限
+// 权限规则：仅管理员可操作；不允许通过后台授予管理员或修改管理员账号
 func (r *RoleService) SetUserRole(ctx context.Context, req *role.SetUserRoleReq) (*role.SetUserRoleRes, error) {
 	// 1. 仅管理员可设置角色（查数据库，不信任JWT）
 	caller, err := r.profileDal.GetById(ctx, int64(auth.GetCurrentUserId(ctx)))
@@ -43,15 +43,18 @@ func (r *RoleService) SetUserRole(ctx context.Context, req *role.SetUserRoleReq)
 	if err != nil {
 		return nil, errors.InternalServer("内部错误", "用户不存在")
 	}
-	// 4. 禁止将自己降级（管理员不能把自己的角色改成非管理员）
+	// 4. 禁止修改自己的角色，避免误操作把最后一个管理员降级
 	callerId := auth.GetCurrentUserId(ctx)
-	if int64(callerId) == req.UserId && targetUser.RoleID == permission.RoleAdmin {
-		return nil, errors.Forbidden("权限不足", "无法修改自己的管理员角色")
+	if int64(callerId) == req.UserId {
+		return nil, errors.Forbidden("权限不足", "无法修改自己的角色")
 	}
-	// 5. 不能将用户设置为管理员（已删除，管理员可授权）
-	// if req.RoleId == permission.RoleAdmin {
-	// 	return nil, errors.Forbidden("权限不足", "无法授予管理员角色")
-	// }
+	// 5. 管理员账号保护：不能修改管理员，也不能通过后台直接授予管理员
+	if targetUser.RoleID == permission.RoleAdmin {
+		return nil, errors.Forbidden("权限不足", "不能修改管理员账号角色")
+	}
+	if int(req.RoleId) == permission.RoleAdmin {
+		return nil, errors.Forbidden("权限不足", "不能通过后台直接授予管理员角色")
+	}
 	// 6. 执行更新
 	err = r.profileDal.SetRoleId(ctx, req.UserId, int(req.RoleId))
 	if err != nil {
