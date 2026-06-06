@@ -322,6 +322,42 @@ func (d *GroupDal) RemoveTeamMember(ctx context.Context, operatorId, memberId in
 	})
 }
 
+func (d *GroupDal) TransferTeamOwner(ctx context.Context, operatorId, newOwnerId int64) error {
+	if operatorId == newOwnerId {
+		return fmt.Errorf("新队长不能是自己")
+	}
+	return d.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var operator model.User
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&operator, operatorId).Error; err != nil {
+			return fmt.Errorf("操作用户不存在")
+		}
+		if operator.GroupId == 0 {
+			return fmt.Errorf("请先创建或加入团队")
+		}
+		var group model.Group
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&group, operator.GroupId).Error; err != nil {
+			return fmt.Errorf("团队不存在")
+		}
+		if err := d.ensureGroupOwner(ctx, tx, &group); err != nil {
+			return err
+		}
+		if group.OwnerId != operatorId {
+			return fmt.Errorf("只有队长可以转移队长")
+		}
+		var newOwner model.User
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&newOwner, newOwnerId).Error; err != nil {
+			return fmt.Errorf("新队长不存在")
+		}
+		if newOwner.GroupId != operator.GroupId {
+			return fmt.Errorf("只能转移给当前团队成员")
+		}
+		if err := tx.Model(&model.Group{}).Where("id = ?", operator.GroupId).Update("owner_id", newOwnerId).Error; err != nil {
+			return fmt.Errorf("转移队长失败: %w", err)
+		}
+		return nil
+	})
+}
+
 func (d *GroupDal) LeaveTeam(ctx context.Context, userId int64) error {
 	err := data2.UpdateCacheDal(ctx, d.rdb, fmt.Sprintf("user:%d:profile", userId), func() error {
 		return d.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {

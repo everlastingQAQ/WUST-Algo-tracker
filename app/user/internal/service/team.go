@@ -34,6 +34,10 @@ type TeamRemoveMemberRequest struct {
 	UserId int64 `json:"userId"`
 }
 
+type TeamTransferOwnerRequest struct {
+	UserId int64 `json:"userId"`
+}
+
 type TeamRespondInviteRequest struct {
 	InviteId uint `json:"inviteId"`
 	Accept   bool `json:"accept"`
@@ -195,6 +199,20 @@ func (g *GroupService) RemoveTeamMember(ctx context.Context, req *TeamRemoveMemb
 		return nil, errors.BadRequest("移除失败", err.Error())
 	}
 	return &TeamSuccessReply{Success: true, Message: "成员已移出团队"}, nil
+}
+
+func (g *GroupService) TransferTeamOwner(ctx context.Context, req *TeamTransferOwnerRequest) (*TeamSuccessReply, error) {
+	current := auth.GetCurrentUser(ctx)
+	if current == nil || current.UserID == 0 {
+		return nil, errors.Unauthorized("未登录", "请先登录")
+	}
+	if req.UserId == 0 {
+		return nil, errors.BadRequest("参数错误", "新队长ID不能为空")
+	}
+	if err := g.groupDal.TransferTeamOwner(ctx, int64(current.UserID), req.UserId); err != nil {
+		return nil, errors.BadRequest("转移失败", err.Error())
+	}
+	return &TeamSuccessReply{Success: true, Message: "队长已转移"}, nil
 }
 
 func (g *GroupService) LeaveTeam(ctx context.Context) (*TeamSuccessReply, error) {

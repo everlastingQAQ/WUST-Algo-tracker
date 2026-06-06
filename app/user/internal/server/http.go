@@ -85,6 +85,7 @@ const (
 	operationTeamUpdate        = "/api.user.v1.Team/Update"
 	operationTeamInvite        = "/api.user.v1.Team/Invite"
 	operationTeamRemoveMember  = "/api.user.v1.Team/RemoveMember"
+	operationTeamTransferOwner = "/api.user.v1.Team/TransferOwner"
 	operationTeamLeave         = "/api.user.v1.Team/Leave"
 	operationTeamDisband       = "/api.user.v1.Team/Disband"
 	operationTeamInviteList    = "/api.user.v1.Team/InviteList"
@@ -234,6 +235,21 @@ func registerTeamHTTPServer(s *http.Server, srv *service.GroupService) {
 		http.SetOperation(ctx, operationTeamRemoveMember)
 		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
 			return srv.RemoveTeamMember(ctx, req.(*service.TeamRemoveMemberRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		return ctx.Result(200, out)
+	})
+	r.POST("/v1/user/team/owner/transfer", func(ctx http.Context) error {
+		var in service.TeamTransferOwnerRequest
+		if err := ctx.Bind(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, operationTeamTransferOwner)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.TransferTeamOwner(ctx, req.(*service.TeamTransferOwnerRequest))
 		})
 		out, err := h(ctx, &in)
 		if err != nil {
