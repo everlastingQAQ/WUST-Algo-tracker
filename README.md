@@ -150,6 +150,26 @@ nano deploy/.env
 bash deploy/scripts/deploy-frontend.sh
 ```
 
+### 7. 标准发布流程
+
+日常迭代建议使用一键发布脚本，它会先备份当前 `bin/conf/dist/systemd/nginx`，再依次部署后端、部署前端、检查 systemd、检查 Nginx 和首页 HTTP 状态：
+
+```bash
+cd /opt/wust-algo/tracker
+git pull
+cd /opt/wust-algo/frontend
+git pull
+cd /opt/wust-algo/tracker
+bash deploy/scripts/deploy-release.sh
+```
+
+可选环境变量：
+
+- `FRONTEND_DIR=/opt/wust-algo/frontend`：前端仓库路径，默认使用 `${APP_ROOT}/frontend`。
+- `BACKUP_ROOT=/opt/wust-algo/backups`：发布备份目录。
+- `HEALTH_URL=http://127.0.0.1:8088/`：发布后的健康检查地址。
+- `SUDO_PASSWORD=...`：非交互环境可用它提前完成 `sudo` 认证；交互终端不需要设置。
+
 ## 配置说明
 
 后端配置位于 `deploy/.env`。常用字段：
@@ -268,7 +288,7 @@ bash deploy/scripts/init-admin.sh your_username
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| `POST` | `/v1/core/spider/update` | 手动刷新指定用户 OJ 数据，返回 `jobId` |
+| `POST` | `/v1/core/spider/update` | 手动刷新指定用户 OJ 数据，返回 `jobId`；传 `platform` 时只刷新单个平台 |
 | `GET` | `/v1/core/spider/job?jobId=1` | 查询单个抓取任务 |
 | `GET` | `/v1/core/spider/jobs?scope=mine&status=running` | 查询抓取任务列表 |
 | `GET` | `/v1/core/spider/status?userId=1` | 查询用户各 OJ 最近抓取状态 |
@@ -288,6 +308,17 @@ bash deploy/scripts/init-admin.sh your_username
 - 最近一次成功抓取且未过期时，后端状态为 `success`，前端展示为“已同步”。
 - 抓取失败会保留上次成功时间，并记录最近失败原因，前端展示为“未同步”。
 - 失败原因只建议给本人、管理员和教练展示。
+
+刷新请求示例：
+
+```json
+{
+  "userId": 4,
+  "platform": "NowCoder"
+}
+```
+
+`platform` 为空或不传时执行全量刷新。
 
 相关数据库表由 GORM `AutoMigrate` 自动创建：
 
@@ -321,13 +352,12 @@ sudo journalctl -u wust-core-data -n 100 --no-pager
 验证核心接口：
 
 ```bash
-curl -i http://127.0.0.1:8088/api/core/statistic/period
-curl -i http://127.0.0.1:8088/api/core/statistic/compare
-curl -i http://127.0.0.1:8088/api/user/message/unread-count
-curl -i http://127.0.0.1:8088/api/core/spider/jobs
+curl -i http://127.0.0.1:8088/
+curl -i 'http://127.0.0.1:8088/api/core/statistic/period?userId=-1'
+curl -i 'http://127.0.0.1:8088/api/user/group/list'
 ```
 
-其中 `/api/core/statistic/compare` 在当前版本应返回 `404`，表示数据对比功能未启用；私信接口未登录时应返回未授权。
+私信、抓取任务和后台接口未登录时应返回未授权。
 
 重新部署后端：
 
@@ -335,6 +365,12 @@ curl -i http://127.0.0.1:8088/api/core/spider/jobs
 cd /opt/wust-algo/tracker
 git pull
 bash deploy/scripts/deploy-backend.sh
+```
+
+完整发布推荐使用：
+
+```bash
+bash deploy/scripts/deploy-release.sh
 ```
 
 ## 本地构建

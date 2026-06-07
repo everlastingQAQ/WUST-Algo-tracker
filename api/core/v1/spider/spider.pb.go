@@ -225,6 +225,7 @@ func (x *GetSpiderRep) GetData() []*GetSpiderRep_Data {
 type UpdateReq struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	UserId        int64                  `protobuf:"varint,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	Platform      string                 `protobuf:"bytes,2,opt,name=platform,proto3" json:"platform,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -264,6 +265,13 @@ func (x *UpdateReq) GetUserId() int64 {
 		return x.UserId
 	}
 	return 0
+}
+
+func (x *UpdateReq) GetPlatform() string {
+	if x != nil {
+		return x.Platform
+	}
+	return ""
 }
 
 type UpdateRes struct {

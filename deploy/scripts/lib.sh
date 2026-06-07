@@ -5,6 +5,8 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 deploy_dir="$(cd "${script_dir}/.." && pwd)"
 repo_dir="$(cd "${deploy_dir}/.." && pwd)"
 
+export PATH="/usr/local/go/bin:/usr/local/bin:/usr/bin:/bin:${PATH}"
+
 load_env() {
   if [[ ! -f "${deploy_dir}/.env" ]]; then
     cp "${deploy_dir}/.env.example" "${deploy_dir}/.env"
@@ -26,12 +28,20 @@ require_command() {
   fi
 }
 
+run_sudo() {
+  if [[ -n "${SUDO_PASSWORD:-}" ]]; then
+    printf "%s\n" "${SUDO_PASSWORD}" | sudo -S "$@"
+  else
+    sudo "$@"
+  fi
+}
+
 sudo_write_template() {
   local src="$1"
   local dst="$2"
   local tmp
   tmp="$(mktemp)"
   envsubst < "$src" > "$tmp"
-  sudo install -m 0644 "$tmp" "$dst"
+  run_sudo install -m 0644 "$tmp" "$dst"
   rm -f "$tmp"
 }

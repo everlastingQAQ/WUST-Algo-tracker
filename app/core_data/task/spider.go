@@ -23,13 +23,19 @@ func NewSpiderTask(rabbitMQ *event.RabbitMQ, data *data.Data) *SpiderTask {
 	}
 }
 
-func (t *SpiderTask) Do(userId int64, needAll bool, source string, requesterId int64) (int64, error) {
+func (t *SpiderTask) Do(userId int64, needAll bool, source string, requesterId int64, platform string) (int64, error) {
+	totalPlatforms := int32(0)
+	if platform != "" {
+		totalPlatforms = 1
+	}
 	job := model.SpiderRefreshJob{
-		UserID:      userId,
-		RequesterID: requesterId,
-		Source:      source,
-		Status:      "queued",
-		NeedAll:     needAll,
+		UserID:          userId,
+		RequesterID:     requesterId,
+		Source:          source,
+		Status:          "queued",
+		NeedAll:         needAll,
+		CurrentPlatform: platform,
+		TotalPlatforms:  totalPlatforms,
 	}
 	if err := t.db.Create(&job).Error; err != nil {
 		log.Errorf("SpiderTask: create job failed: %v", err)
@@ -45,7 +51,7 @@ func (t *SpiderTask) Do(userId int64, needAll bool, source string, requesterId i
 		}).Error
 		return int64(job.ID), err
 	}
-	e := event.SpiderEvent{UserId: userId, NeedAll: needAll, JobId: int64(job.ID)}
+	e := event.SpiderEvent{UserId: userId, NeedAll: needAll, JobId: int64(job.ID), Platform: platform}
 	body, err := json.Marshal(e)
 	if err != nil {
 		log.Errorf("SpiderTask: json.Marshal failed: %v", err)

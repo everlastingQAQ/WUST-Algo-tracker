@@ -56,15 +56,19 @@ sudo_write_template "${deploy_dir}/systemd/wust-core-data.service.tpl" /etc/syst
 sudo_write_template "${deploy_dir}/systemd/wust-agent.service.tpl" /etc/systemd/system/wust-agent.service
 sudo_write_template "${deploy_dir}/systemd/wust-gateway.service.tpl" /etc/systemd/system/wust-gateway.service
 
-sudo systemctl daemon-reload
-sudo systemctl enable --now wust-user.service
-sudo systemctl enable --now wust-core-data.service
-sudo systemctl enable --now wust-gateway.service
+run_sudo systemctl daemon-reload
+run_sudo systemctl enable wust-user.service
+run_sudo systemctl enable wust-core-data.service
+run_sudo systemctl enable wust-gateway.service
+run_sudo systemctl restart wust-user.service
+run_sudo systemctl restart wust-core-data.service
+run_sudo systemctl restart wust-gateway.service
 
 if [[ "${ENABLE_AGENT}" == "1" ]]; then
-  sudo systemctl enable --now wust-agent.service
+  run_sudo systemctl enable wust-agent.service
+  run_sudo systemctl restart wust-agent.service
 else
-  sudo systemctl disable --now wust-agent.service >/dev/null 2>&1 || true
+  run_sudo systemctl disable --now wust-agent.service >/dev/null 2>&1 || true
   echo "Agent service skipped because ENABLE_AGENT=${ENABLE_AGENT}."
 fi
 

@@ -76,6 +76,19 @@ bash deploy/scripts/deploy-frontend.sh
 
 Set `DOMAIN` in `deploy/.env` before running the frontend script.
 
+For routine releases after both repositories already exist on the server, use the full release wrapper:
+
+```bash
+cd /opt/wust-algo/tracker
+git pull
+cd /opt/wust-algo/frontend
+git pull
+cd /opt/wust-algo/tracker
+bash deploy/scripts/deploy-release.sh
+```
+
+The wrapper creates a backup under `/opt/wust-algo/backups`, deploys backend and frontend, reloads services, tests Nginx, and checks the configured health URL.
+
 ## 5. Create First Admin
 
 Register a normal account from the website, then run:
@@ -91,4 +104,11 @@ bash deploy/scripts/init-admin.sh your_username
 cd /opt/wust-algo/tracker
 bash deploy/scripts/status.sh
 curl http://127.0.0.1:8080/v1/user/group/list
+```
+
+Check spider jobs when users report stale OJ data:
+
+```bash
+curl -H "Authorization: Bearer <jwt>" 'http://127.0.0.1:8088/api/core/spider/jobs?scope=all&page=1&pageSize=20'
+curl -H "Authorization: Bearer <jwt>" 'http://127.0.0.1:8088/api/core/spider/status?userId=4'
 ```

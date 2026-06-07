@@ -47,7 +47,7 @@ func (c *Consumer) Consume() {
 				_ = d.Nack(false, false)
 				return
 			}
-			err = c.spider.LoadData(msg.JobId, msg.UserId, msg.NeedAll)
+			err = c.spider.LoadData(msg.JobId, msg.UserId, msg.NeedAll, msg.Platform)
 			if err != nil {
 				log.Errorf("RabbitMQ(Spider): %v", err)
 				_ = d.Nack(false, false)

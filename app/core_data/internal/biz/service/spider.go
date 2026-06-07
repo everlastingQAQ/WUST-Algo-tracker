@@ -24,13 +24,25 @@ func NewSpiderUseCase(data *data.Data) *SpiderUseCase {
 	}
 }
 
-// LoadData 加载数据
-func (uc *SpiderUseCase) LoadData(jobId int64, userId int64, needAll bool) error {
+// LoadData 加载数据。targetPlatform 为空时刷新全部绑定平台。
+func (uc *SpiderUseCase) LoadData(jobId int64, userId int64, needAll bool, targetPlatform string) error {
 	// 无论如何，函数退出前一定删缓存
 	defer uc.invalidateCache(userId)
 
 	var platforms []model.Platform
-	if err := uc.data.DB.Where("user_id = ?", userId).Find(&platforms).Error; err != nil {
+	query := uc.data.DB.Where("user_id = ?", userId)
+	if targetPlatform != "" {
+		query = query.Where("platform = ?", targetPlatform)
+	}
+	if err := query.Find(&platforms).Error; err != nil {
+		uc.finishJob(jobId, "failed", err.Error())
+		return err
+	}
+	if len(platforms) == 0 {
+		err := fmt.Errorf("未绑定平台 %s", targetPlatform)
+		if targetPlatform == "" {
+			err = fmt.Errorf("未绑定 OJ 平台")
+		}
 		uc.finishJob(jobId, "failed", err.Error())
 		return err
 	}

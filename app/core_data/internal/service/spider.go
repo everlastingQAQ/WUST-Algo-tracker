@@ -9,6 +9,7 @@ import (
 	"cwxu-algo/app/core_data/internal/data/model"
 	"cwxu-algo/app/core_data/task"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -59,13 +60,18 @@ func (s SpiderService) Update(ctx context.Context, req *spider.UpdateReq) (*spid
 	if current != nil {
 		requesterId = int64(current.UserID)
 	}
-	jobId, err := s.spider.Do(req.UserId, true, "manual", requesterId) // 全量更新
+	platform := strings.TrimSpace(req.GetPlatform())
+	jobId, err := s.spider.Do(req.UserId, true, "manual", requesterId, platform) // 全量或单平台更新
 	if err != nil {
 		return nil, InternalError
 	}
+	message := "更新成功，请稍等片刻，您的全量OJ数据正在更新"
+	if platform != "" {
+		message = fmt.Sprintf("更新成功，请稍等片刻，%s 数据正在更新", platform)
+	}
 	return &spider.UpdateRes{
 		Code:    0,
-		Message: "更新成功，请稍等片刻，您的全量OJ数据正在更新",
+		Message: message,
 		JobId:   jobId,
 	}, nil
 }
@@ -305,7 +311,7 @@ func (s SpiderService) SetSpider(ctx context.Context, req *spider.SetSpiderReq) 
 		log.Errorf("SetSpider: save platform failed: %v", err)
 		return nil, InternalError
 	}
-	if _, err := s.spider.Do(req.UserId, true, "bind", int64(auth.GetCurrentUserId(ctx))); err != nil {
+	if _, err := s.spider.Do(req.UserId, true, "bind", int64(auth.GetCurrentUserId(ctx)), req.Platform); err != nil {
 		log.Errorf("SetSpider: enqueue spider task failed: %v", err)
 	}
 	return &spider.SetSpiderRep{

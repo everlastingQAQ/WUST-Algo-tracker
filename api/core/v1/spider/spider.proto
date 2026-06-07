@@ -63,6 +63,7 @@ message GetSpiderRep {
 
 message UpdateReq {
   int64 user_id = 1;
+  string platform = 2;
 }
 
 message UpdateRes {
