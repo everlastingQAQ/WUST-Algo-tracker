@@ -1044,9 +1044,10 @@ const file_core_v1_spider_spider_proto_rawDesc = "" +
 	"\x04data\x18\x01 \x03(\v2%.api.core.v1.spider.GetSpiderRep.DataR\x04data\x1a>\n" +
 	"\x04Data\x12\x1a\n" +
 	"\bplatform\x18\x01 \x01(\tR\bplatform\x12\x1a\n" +
-	"\busername\x18\x02 \x01(\tR\busername\"$\n" +
+	"\busername\x18\x02 \x01(\tR\busername\"@\n" +
 	"\tUpdateReq\x12\x17\n" +
-	"\auser_id\x18\x01 \x01(\x03R\x06userId\"O\n" +
+	"\auser_id\x18\x01 \x01(\x03R\x06userId\x12\x1a\n" +
+	"\bplatform\x18\x02 \x01(\tR\bplatform\"O\n" +
 	"\tUpdateRes\x12\x12\n" +
 	"\x04code\x18\x01 \x01(\x03R\x04code\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12\x14\n" +

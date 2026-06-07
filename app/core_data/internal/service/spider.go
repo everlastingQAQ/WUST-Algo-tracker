@@ -15,6 +15,7 @@ import (
 
 	"github.com/go-kratos/kratos/v2/errors"
 	"github.com/go-kratos/kratos/v2/log"
+	"github.com/go-kratos/kratos/v2/transport"
 	"github.com/redis/go-redis/v9"
 	"golang.org/x/time/rate"
 	"gorm.io/gorm"
@@ -61,6 +62,11 @@ func (s SpiderService) Update(ctx context.Context, req *spider.UpdateReq) (*spid
 		requesterId = int64(current.UserID)
 	}
 	platform := strings.TrimSpace(req.GetPlatform())
+	if platform == "" {
+		if header, ok := transport.FromServerContext(ctx); ok {
+			platform = strings.TrimSpace(header.RequestHeader().Get("X-Spider-Platform"))
+		}
+	}
 	jobId, err := s.spider.Do(req.UserId, true, "manual", requesterId, platform) // 全量或单平台更新
 	if err != nil {
 		return nil, InternalError
