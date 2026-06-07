@@ -5,11 +5,14 @@ import (
 	"cwxu-algo/app/core_data/internal/data"
 	"cwxu-algo/app/core_data/internal/data/model"
 	"encoding/json"
+	"errors"
 
 	"github.com/go-kratos/kratos/v2/log"
 	"github.com/streadway/amqp"
 	"gorm.io/gorm"
 )
+
+var ErrActiveRefreshJob = errors.New("active spider refresh job already exists")
 
 type SpiderTask struct {
 	rabbitMQ *amqp.Channel
@@ -24,6 +27,14 @@ func NewSpiderTask(rabbitMQ *event.RabbitMQ, data *data.Data) *SpiderTask {
 }
 
 func (t *SpiderTask) Do(userId int64, needAll bool, source string, requesterId int64, platform string) (int64, error) {
+	activeJob, err := t.findActiveJob(userId, platform)
+	if err != nil {
+		return 0, err
+	}
+	if activeJob.ID > 0 {
+		return int64(activeJob.ID), ErrActiveRefreshJob
+	}
+
 	totalPlatforms := int32(0)
 	if platform != "" {
 		totalPlatforms = 1
@@ -73,4 +84,18 @@ func (t *SpiderTask) Do(userId int64, needAll bool, source string, requesterId i
 		return int64(job.ID), err
 	}
 	return int64(job.ID), nil
+}
+
+func (t *SpiderTask) findActiveJob(userId int64, platform string) (model.SpiderRefreshJob, error) {
+	var job model.SpiderRefreshJob
+	query := t.db.
+		Where("user_id = ?", userId).
+		Where("status IN ?", []string{"queued", "running"})
+	condition, args := ActiveRefreshConflictCondition(platform)
+	query = query.Where(condition, args...)
+	err := query.Order("updated_at DESC").First(&job).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return model.SpiderRefreshJob{}, nil
+	}
+	return job, err
 }

@@ -204,7 +204,7 @@ func (d *GroupDal) UpdateTeam(ctx context.Context, userId int64, groupId int64, 
 		if err := d.ensureGroupOwner(ctx, tx, &group); err != nil {
 			return err
 		}
-		if group.OwnerId != userId {
+		if !CanManageTeam(userId, group.OwnerId) {
 			return fmt.Errorf("只有队长可以编辑团队")
 		}
 		updates := map[string]interface{}{
@@ -239,7 +239,7 @@ func (d *GroupDal) InviteUser(ctx context.Context, inviterId, inviteeId int64) (
 		if err := d.ensureGroupOwner(ctx, tx, &group); err != nil {
 			return err
 		}
-		if group.OwnerId != inviterId {
+		if !CanManageTeam(inviterId, group.OwnerId) {
 			return fmt.Errorf("只有队长可以邀请成员")
 		}
 		var invitee model.User
@@ -295,7 +295,7 @@ func (d *GroupDal) RemoveTeamMember(ctx context.Context, operatorId, memberId in
 			if err := d.ensureGroupOwner(ctx, tx, &group); err != nil {
 				return err
 			}
-			if group.OwnerId != operatorId {
+			if !CanManageTeam(operatorId, group.OwnerId) {
 				return fmt.Errorf("只有队长可以编辑成员")
 			}
 			var member model.User
@@ -341,7 +341,7 @@ func (d *GroupDal) TransferTeamOwner(ctx context.Context, operatorId, newOwnerId
 		if err := d.ensureGroupOwner(ctx, tx, &group); err != nil {
 			return err
 		}
-		if group.OwnerId != operatorId {
+		if !CanManageTeam(operatorId, group.OwnerId) {
 			return fmt.Errorf("只有队长可以转移队长")
 		}
 		var newOwner model.User
@@ -414,7 +414,7 @@ func (d *GroupDal) DisbandTeam(ctx context.Context, ownerId int64) error {
 		if err := d.ensureGroupOwner(ctx, tx, &group); err != nil {
 			return err
 		}
-		if group.OwnerId != ownerId {
+		if !CanManageTeam(ownerId, group.OwnerId) {
 			return fmt.Errorf("只有队长可以解散团队")
 		}
 

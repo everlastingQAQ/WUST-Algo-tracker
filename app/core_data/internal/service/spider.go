@@ -8,6 +8,7 @@ import (
 	"cwxu-algo/app/core_data/internal/data"
 	"cwxu-algo/app/core_data/internal/data/model"
 	"cwxu-algo/app/core_data/task"
+	stderrors "errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -35,16 +36,26 @@ type SpiderService struct {
 	db         *gorm.DB
 	rdb        *redis.Client
 	spider     *task.SpiderTask
-	limiterMap sync.Map // map[int64]*rate.Limiter
+	limiterMap sync.Map // map[string]*rate.Limiter
+}
+
+type RetryJobReply struct {
+	Code    int64  `json:"code"`
+	Message string `json:"message"`
+	JobId   int64  `json:"jobId"`
 }
 
 func (s *SpiderService) getLimiter(userId int64, interval time.Duration) *rate.Limiter {
-	if l, ok := s.limiterMap.Load(userId); ok {
+	return s.getLimiterByKey(fmt.Sprintf("user:%d", userId), interval)
+}
+
+func (s *SpiderService) getLimiterByKey(key string, interval time.Duration) *rate.Limiter {
+	if l, ok := s.limiterMap.Load(key); ok {
 		return l.(*rate.Limiter)
 	}
 	// 1 request per interval, burst 1
 	l := rate.NewLimiter(rate.Every(interval), 1)
-	actual, _ := s.limiterMap.LoadOrStore(userId, l)
+	actual, _ := s.limiterMap.LoadOrStore(key, l)
 	return actual.(*rate.Limiter)
 }
 
@@ -52,7 +63,17 @@ func (s SpiderService) Update(ctx context.Context, req *spider.UpdateReq) (*spid
 	//if !auth.VerifyById(ctx, uint(req.UserId)) {
 	//	return nil, UpdateForbidden
 	//}
-	limiter := s.getLimiter(req.UserId, 60*time.Second)
+	platform := strings.TrimSpace(req.GetPlatform())
+	if platform == "" {
+		if header, ok := transport.FromServerContext(ctx); ok {
+			platform = strings.TrimSpace(header.RequestHeader().Get("X-Spider-Platform"))
+		}
+	}
+	limiterKey := fmt.Sprintf("update:%d:all", req.UserId)
+	if platform != "" {
+		limiterKey = fmt.Sprintf("update:%d:%s", req.UserId, platform)
+	}
+	limiter := s.getLimiterByKey(limiterKey, 60*time.Second)
 	if !limiter.Allow() {
 		return nil, RateLimitError
 	}
@@ -61,14 +82,15 @@ func (s SpiderService) Update(ctx context.Context, req *spider.UpdateReq) (*spid
 	if current != nil {
 		requesterId = int64(current.UserID)
 	}
-	platform := strings.TrimSpace(req.GetPlatform())
-	if platform == "" {
-		if header, ok := transport.FromServerContext(ctx); ok {
-			platform = strings.TrimSpace(header.RequestHeader().Get("X-Spider-Platform"))
-		}
-	}
 	jobId, err := s.spider.Do(req.UserId, true, "manual", requesterId, platform) // 全量或单平台更新
 	if err != nil {
+		if stderrors.Is(err, task.ErrActiveRefreshJob) {
+			return &spider.UpdateRes{
+				Code:    0,
+				Message: "已有抓取任务正在进行，请稍等",
+				JobId:   jobId,
+			}, nil
+		}
 		return nil, InternalError
 	}
 	message := "更新成功，请稍等片刻，您的全量OJ数据正在更新"
@@ -214,6 +236,46 @@ func (s SpiderService) Jobs(ctx context.Context, req *spider.JobsReq) (*spider.J
 		Message: "获取抓取任务列表成功",
 		Data:    list,
 		Total:   total,
+	}, nil
+}
+
+func (s SpiderService) Retry(ctx context.Context, jobId int64) (*RetryJobReply, error) {
+	if jobId <= 0 {
+		return nil, errors.BadRequest("参数错误", "jobId不能为空")
+	}
+	current := auth.GetCurrentUser(ctx)
+	if current == nil {
+		return nil, errors.Unauthorized("未登录", "请先登录")
+	}
+	var job model.SpiderRefreshJob
+	if err := s.db.Where("id = ?", jobId).First(&job).Error; err != nil {
+		return nil, errors.NotFound("任务不存在", "未找到抓取任务")
+	}
+	if job.Status != "failed" {
+		return nil, errors.BadRequest("状态错误", "只能重试失败任务")
+	}
+	if !canViewUserDetail(ctx, job.UserID) {
+		return nil, errors.Forbidden("权限错误", "无权重试该任务")
+	}
+	platform := job.CurrentPlatform
+	if job.TotalPlatforms != 1 {
+		platform = ""
+	}
+	newJobId, err := s.spider.Do(job.UserID, job.NeedAll, "retry", int64(current.UserID), platform)
+	if err != nil {
+		if stderrors.Is(err, task.ErrActiveRefreshJob) {
+			return &RetryJobReply{
+				Code:    0,
+				Message: "已有抓取任务正在进行，请稍等",
+				JobId:   newJobId,
+			}, nil
+		}
+		return nil, InternalError
+	}
+	return &RetryJobReply{
+		Code:    0,
+		Message: "重试任务已加入队列",
+		JobId:   newJobId,
 	}, nil
 }
 

@@ -1,0 +1,74 @@
+name: Manual Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      frontend_ref:
+        description: Frontend branch/tag/SHA to deploy
+        required: false
+        default: main
+      backend_ref:
+        description: Backend branch/tag/SHA to deploy
+        required: false
+        default: main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout backend
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.backend_ref }}
+          path: backend
+
+      - name: Checkout frontend
+        uses: actions/checkout@v4
+        with:
+          repository: WUSTACM/WUST-Algo-Frontend
+          ref: ${{ inputs.frontend_ref }}
+          path: frontend
+
+      - name: Prepare release archives
+        run: |
+          tar --exclude='.git' --exclude='node_modules' --exclude='dist' -C backend -czf backend.tar.gz .
+          tar --exclude='.git' --exclude='node_modules' --exclude='dist' -C frontend -czf frontend.tar.gz .
+
+      - name: Install sshpass
+        run: sudo apt-get update && sudo apt-get install -y sshpass
+
+      - name: Upload release archives
+        env:
+          SSHPASS: ${{ secrets.DEPLOY_SSH_PASSWORD }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SUDO_PASSWORD: ${{ secrets.DEPLOY_SUDO_PASSWORD }}
+          APP_ROOT: ${{ secrets.DEPLOY_APP_ROOT }}
+        run: |
+          test -n "$DEPLOY_HOST"
+          test -n "$DEPLOY_USER"
+          printf 'APP_ROOT=%q\nDEPLOY_SUDO_PASSWORD=%q\n' "${APP_ROOT:-/opt/wust-algo}" "${DEPLOY_SUDO_PASSWORD:-}" > deploy.env
+          sshpass -e ssh -o StrictHostKeyChecking=no "$DEPLOY_USER@$DEPLOY_HOST" 'mkdir -p /tmp/wust-algo-release'
+          sshpass -e scp -o StrictHostKeyChecking=no backend.tar.gz frontend.tar.gz deploy.env "$DEPLOY_USER@$DEPLOY_HOST:/tmp/wust-algo-release/"
+
+      - name: Deploy on server
+        env:
+          SSHPASS: ${{ secrets.DEPLOY_SSH_PASSWORD }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          sshpass -e ssh -o StrictHostKeyChecking=no "$DEPLOY_USER@$DEPLOY_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          set -a
+          . /tmp/wust-algo-release/deploy.env
+          set +a
+          APP_ROOT="${APP_ROOT:-/opt/wust-algo}"
+          mkdir -p "$APP_ROOT/tracker" "$APP_ROOT/frontend"
+          tar -xzf /tmp/wust-algo-release/backend.tar.gz -C "$APP_ROOT/tracker"
+          tar -xzf /tmp/wust-algo-release/frontend.tar.gz -C "$APP_ROOT/frontend"
+          export SUDO_PASSWORD="${DEPLOY_SUDO_PASSWORD:-}"
+          export FRONTEND_DIR="$APP_ROOT/frontend"
+          export HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:8088/}"
+          cd "$APP_ROOT/tracker"
+          bash deploy/scripts/deploy-release.sh
+          REMOTE

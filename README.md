@@ -39,6 +39,8 @@ v1.1.3 聚焦工程质量和权限补洞：
 - 密码权限：本人修改密码必须提供旧密码；管理员只能重置非管理员账号密码，不能重置其他管理员。
 - 群发消息：教练/管理员群发站内消息时重新查询数据库角色，不再只信任 JWT 中的旧角色。
 - 错误提示配合：后端权限错误继续返回明确原因，前端 v1.1.3 会统一展示这些错误。
+- CI/CD：新增 GitHub Actions 后端 CI 和手动发布工作流，支持构建、测试、打包、上传、服务器备份、重启和健康检查。
+- 抓取可靠性：单平台刷新增加同平台任务去重、按平台限流和失败任务重试入口，避免误触导致重复抓取。
 
 ## v1.1.2 更新
 
@@ -170,6 +172,23 @@ bash deploy/scripts/deploy-release.sh
 - `HEALTH_URL=http://127.0.0.1:8088/`：发布后的健康检查地址。
 - `SUDO_PASSWORD=...`：非交互环境可用它提前完成 `sudo` 认证；交互终端不需要设置。
 
+### 8. GitHub Actions 发布
+
+仓库内置两个工作流：
+
+- `Backend CI`：push、pull request 或手动触发时运行核心测试并编译 `user`、`core_data`、`gateway`。
+- `Manual Deploy`：手动触发，拉取前后端指定分支，打包上传到服务器，然后调用 `deploy/scripts/deploy-release.sh`。
+
+使用 `Manual Deploy` 前需要在 GitHub 仓库 Secrets 中配置：
+
+- `DEPLOY_HOST`：服务器 IP 或域名，例如 `10.99.16.19`。
+- `DEPLOY_USER`：部署用户，例如 `acm_tracker`。
+- `DEPLOY_SSH_PASSWORD`：部署用户 SSH 密码。
+- `DEPLOY_SUDO_PASSWORD`：部署用户 sudo 密码。
+- `DEPLOY_APP_ROOT`：可选，默认 `/opt/wust-algo`。
+
+触发路径：GitHub 仓库页面 -> `Actions` -> `Manual Deploy` -> `Run workflow`。默认部署 `main`，也可以指定前端和后端分支或 tag。
+
 ## 配置说明
 
 后端配置位于 `deploy/.env`。常用字段：
@@ -292,6 +311,7 @@ bash deploy/scripts/init-admin.sh your_username
 | `GET` | `/v1/core/spider/job?jobId=1` | 查询单个抓取任务 |
 | `GET` | `/v1/core/spider/jobs?scope=mine&status=running` | 查询抓取任务列表 |
 | `GET` | `/v1/core/spider/status?userId=1` | 查询用户各 OJ 最近抓取状态 |
+| `POST` | `/v1/core/spider/retry` | 重试失败的抓取任务，本人、教练和管理员可用 |
 
 任务状态：
 
@@ -319,6 +339,13 @@ bash deploy/scripts/init-admin.sh your_username
 ```
 
 `platform` 为空或不传时执行全量刷新。
+
+抓取防误触规则：
+
+- 同一用户同一平台已有 `queued/running` 任务时，新的同平台请求不会重复入队，会返回现有 `jobId`。
+- 全量刷新会与所有单平台刷新互斥；单平台刷新只与自身平台和全量刷新互斥。
+- 手动刷新按 `userId + platform` 做 60 秒限流，不同平台互不影响。
+- 失败任务可通过后台或 `/v1/core/spider/retry` 重试；重试仍遵循重复任务保护。
 
 相关数据库表由 GORM `AutoMigrate` 自动创建：
 
@@ -384,8 +411,17 @@ go build -o /tmp/wust-agent ./app/agent/cmd/agent
 常规测试：
 
 ```bash
-go test ./app/core_data/...
+go test ./app/core_data/internal/data/dal ./app/core_data/task ./app/user/internal/service ./app/user/internal/data/dal
 ```
+
+当前重点覆盖：
+
+- AC 状态识别与 `platform + problem` 去重。
+- 排名和统计使用的基础去重规则。
+- 团队队长权限判断。
+- 注册邀请码校验。
+- 私信内容长度和空内容校验。
+- 单平台抓取任务互斥规则。
 
 外部数据库、OJ 和第三方 AI 的集成测试默认跳过。如需运行：
 

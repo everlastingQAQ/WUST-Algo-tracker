@@ -1,0 +1,32 @@
+name: Backend CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache: true
+
+      - name: Run focused tests
+        run: |
+          go test ./app/core_data/internal/data/dal ./app/core_data/task ./app/user/internal/service ./app/user/internal/data/dal
+
+      - name: Build backend services
+        run: |
+          go build -o /tmp/wust-user ./app/user/cmd/user
+          go build -o /tmp/wust-core-data ./app/core_data/cmd/core_data
+          cd app/gateway
+          go build -o /tmp/wust-gateway ./cmd/gateway

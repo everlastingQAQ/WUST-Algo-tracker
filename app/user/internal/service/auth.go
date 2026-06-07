@@ -86,14 +86,9 @@ func (s *AuthService) Register(ctx context.Context, req *pb.RegisterReq) (res *p
 		Success: true,
 		Message: "注册成功",
 	}
-	if strings.TrimSpace(req.InviteCode) == "" {
+	if ok, message := validateRegisterInviteCode(req.InviteCode, s.getRegisterInviteCode()); !ok {
 		res.Success = false
-		res.Message = "请输入邀请码"
-		return
-	}
-	if strings.TrimSpace(req.InviteCode) != s.getRegisterInviteCode() {
-		res.Success = false
-		res.Message = "邀请码错误"
+		res.Message = message
 		return
 	}
 	// 是否已经用户名

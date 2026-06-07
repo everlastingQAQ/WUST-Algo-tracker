@@ -14,6 +14,7 @@ import (
 	nethttp "net/http"
 	"strconv"
 
+	kerrors "github.com/go-kratos/kratos/v2/errors"
 	"github.com/go-kratos/kratos/v2/log"
 	"github.com/go-kratos/kratos/v2/middleware/auth/jwt"
 	"github.com/go-kratos/kratos/v2/middleware/recovery"
@@ -93,6 +94,32 @@ func NewHTTPServer(c *conf.Server, logger log.Logger, submitService *service.Sub
 			return
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": data})
+	})
+	srv.HandleFunc("/v1/core/spider/retry", func(w nethttp.ResponseWriter, r *nethttp.Request) {
+		if r.Method != nethttp.MethodPost {
+			w.WriteHeader(nethttp.StatusMethodNotAllowed)
+			return
+		}
+		var req struct {
+			JobId int64 `json:"jobId"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			w.WriteHeader(nethttp.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]any{"code": 400, "message": "请求参数错误"})
+			return
+		}
+		res, err := spiderService.Retry(r.Context(), req.JobId)
+		w.Header().Set("Content-Type", "application/json")
+		if err != nil {
+			statusCode := nethttp.StatusInternalServerError
+			if se := kerrors.FromError(err); se != nil {
+				statusCode = int(se.Code)
+			}
+			w.WriteHeader(statusCode)
+			_ = json.NewEncoder(w).Encode(map[string]any{"code": statusCode, "message": err.Error()})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(res)
 	})
 	return srv
 }
