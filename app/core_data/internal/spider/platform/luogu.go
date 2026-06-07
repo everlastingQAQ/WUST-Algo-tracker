@@ -225,7 +225,11 @@ func (lg *NewLuoGu) getClient() (*http.Client, error) {
 }
 
 func (lg *NewLuoGu) FetchSubmitLog(userId int64, username string, needAll bool) ([]model.SubmitLog, error) {
-	baseUrl := fmt.Sprintf("https://www.luogu.com.cn/record/list?user=%s&page=", username)
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return nil, fmt.Errorf("LuoGu 用户编号不能为空")
+	}
+	baseUrl := fmt.Sprintf("https://www.luogu.com.cn/record/list?user=%s&page=", url.QueryEscape(username))
 	client, err := lg.getClient()
 	if err != nil {
 		return nil, err
@@ -237,6 +241,9 @@ func (lg *NewLuoGu) FetchSubmitLog(userId int64, username string, needAll bool) 
 	}
 	rb, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("LuoGu 请求响应码错误 %d, %s", resp.StatusCode, string(rb))
+	}
 	var subs []Record
 	inj, err := lg.parseLuoGuHTML(string(rb))
 	if err != nil {
@@ -244,7 +251,12 @@ func (lg *NewLuoGu) FetchSubmitLog(userId int64, username string, needAll bool) 
 	}
 	subs = inj.CurrentData.Records.Result
 	if needAll {
-		for i := 2; i <= inj.CurrentData.Records.Count/inj.CurrentData.Records.PerPage+1; i++ {
+		perPage := inj.CurrentData.Records.PerPage
+		if perPage <= 0 {
+			return nil, fmt.Errorf("LuoGu 返回非法分页大小: %d", perPage)
+		}
+		totalPages := (inj.CurrentData.Records.Count + perPage - 1) / perPage
+		for i := 2; i <= totalPages; i++ {
 			req, _ := http.NewRequest("GET", baseUrl+fmt.Sprint(i), nil)
 			resp, err := client.Do(req)
 			if err != nil {
@@ -252,21 +264,24 @@ func (lg *NewLuoGu) FetchSubmitLog(userId int64, username string, needAll bool) 
 			}
 			rb, _ := io.ReadAll(resp.Body)
 			resp.Body.Close()
+			if resp.StatusCode != http.StatusOK {
+				return nil, fmt.Errorf("LuoGu 第 %d 页请求响应码错误 %d, %s", i, resp.StatusCode, string(rb))
+			}
 			inj, err := lg.parseLuoGuHTML(string(rb))
 			if err != nil {
 				return nil, err
 			}
+			if len(inj.CurrentData.Records.Result) == 0 {
+				break
+			}
 			subs = append(subs, inj.CurrentData.Records.Result...)
+			time.Sleep(300 * time.Millisecond)
 		}
 	}
 	var res []model.SubmitLog
 	for _, sub := range subs {
-		var status, lang string
-		if sub.Status != 12 {
-			status = "WA"
-		} else {
-			status = "AC"
-		}
+		status := normalizeLuoGuStatus(sub.Status)
+		var lang string
 		if sub.Language == 34 {
 			lang = "C++"
 		} else {
@@ -283,6 +298,31 @@ func (lg *NewLuoGu) FetchSubmitLog(userId int64, username string, needAll bool) 
 		})
 	}
 	return res, nil
+}
+
+func normalizeLuoGuStatus(status int) string {
+	switch status {
+	case 12:
+		return "AC"
+	case 2:
+		return "CE"
+	case 5:
+		return "TLE"
+	case 6:
+		return "WA"
+	case 7:
+		return "RE"
+	case 11, 14:
+		return "WA"
+	case 0, 1:
+		return "UNKNOWN"
+	case 3:
+		return "OLE"
+	case 4:
+		return "MLE"
+	default:
+		return fmt.Sprintf("LuoGu:%d", status)
+	}
 }
 
 func (lg *NewLuoGu) Name() string {

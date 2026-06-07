@@ -18,6 +18,8 @@ type SpiderUseCase struct {
 	data *data.Data
 }
 
+const spiderInsertBatchSize = 500
+
 func NewSpiderUseCase(data *data.Data) *SpiderUseCase {
 	return &SpiderUseCase{
 		data: data,
@@ -112,7 +114,7 @@ func (uc *SpiderUseCase) fetchAndSave(userId int64, plat model.Platform, needAll
 				"time",
 			}),
 		}).
-			Create(&tmp).Error
+			CreateInBatches(&tmp, spiderInsertBatchSize).Error
 	})
 	return len(tmp), err
 }
@@ -144,7 +146,7 @@ func (uc *SpiderUseCase) fetchAndSaveContest(userId int64, plat model.Platform, 
 			Columns:   []clause.Column{{Name: "contest_id"}, {Name: "user_id"}},
 			DoNothing: true,
 		}).
-			Create(&tmp).Error
+			CreateInBatches(&tmp, spiderInsertBatchSize).Error
 	})
 }
 

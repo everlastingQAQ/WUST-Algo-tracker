@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -23,9 +25,28 @@ type atcJson struct {
 	ExecutionTime int    `json:"execution_time"` // 执行时间（毫秒）
 }
 
-func fetchLog(url string) ([]atcJson, error) {
-	// 发起 Get 请求
-	resp, err := http.Get(url)
+var (
+	atCoderAPIBaseURL = "https://atc.luckysan.top/atcoder/atcoder-api/v3/user/submissions"
+	atCoderPageSize   = 500
+)
+
+func fetchAtCoderLog(client *http.Client, baseURL string, username string, fromSecond int64) ([]atcJson, error) {
+	u, err := url.Parse(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	q := u.Query()
+	q.Set("user", username)
+	q.Set("from_second", strconv.FormatInt(fromSecond, 10))
+	u.RawQuery = q.Encode()
+
+	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", "WUST-ACM-Tracker/1.1 (+https://github.com/WUSTACM/WUST-Algo-tracker)")
+
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("发起http请求失败: %s", err.Error())
 	}
@@ -46,57 +67,63 @@ func fetchLog(url string) ([]atcJson, error) {
 	return atc, nil
 }
 
-func (p NewAtCoder) FetchSubmitLog(userId int64, username string, needAll bool) (res []model.SubmitLog, err error) {
-	// 比如这里的needAll 如果为true 那么second就为0，表示从头到尾所有数据
-	// 如果为false 那么就获取最近一天的数据
-	t := time.Unix(0, 0)
-	if needAll == false {
-		t = time.Now().Add(-60 * (1 * time.Hour))
-	}
-	url := fmt.Sprintf(
-		"https://atc.luckysan.top/atcoder/atcoder-api/v3/user/submissions?user=%s&from_second=%d",
-		username, int(t.Unix()),
-	)
-	atc, err := fetchLog(url)
-	if err != nil {
-		return nil, err
-	}
-	// 构建res
-	for _, v := range atc {
-		tmp := model.SubmitLog{
+func atCoderRowsToSubmitLogs(userId int64, rows []atcJson) []model.SubmitLog {
+	res := make([]model.SubmitLog, 0, len(rows))
+	for _, v := range rows {
+		res = append(res, model.SubmitLog{
 			UserID:   userId,
-			Platform: "AtCoder",
+			Platform: spider.AtCoder,
 			SubmitID: strconv.Itoa(v.ID),
 			Contest:  v.ContestID,
 			Problem:  v.ProblemID,
 			Lang:     v.Language,
 			Status:   v.Result,
 			Time:     time.Unix(v.EpochSecond, 0),
-		}
-		res = append(res, tmp)
+		})
 	}
-	for len(atc) == 500 {
-		url := fmt.Sprintf(
-			"https://atc.luckysan.top/atcoder/atcoder-api/v3/user/submissions?user=%s&from_second=%d",
-			username, atc[len(atc)-1].EpochSecond,
-		)
-		atc, err = fetchLog(url)
+	return res
+}
+
+func (p NewAtCoder) FetchSubmitLog(userId int64, username string, needAll bool) (res []model.SubmitLog, err error) {
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return nil, fmt.Errorf("AtCoder 用户名不能为空")
+	}
+	fromSecond := int64(0)
+	if !needAll {
+		fromSecond = time.Now().Add(-60 * time.Minute).Unix()
+	}
+	client := &http.Client{Timeout: 30 * time.Second}
+	seen := make(map[int]struct{})
+	for page := 0; ; page++ {
+		atc, err := fetchAtCoderLog(client, atCoderAPIBaseURL, username, fromSecond)
 		if err != nil {
 			return nil, err
 		}
-		for _, v := range atc {
-			tmp := model.SubmitLog{
-				UserID:   userId,
-				Platform: "AtCoder",
-				SubmitID: strconv.Itoa(v.ID),
-				Contest:  v.ContestID,
-				Problem:  v.ProblemID,
-				Lang:     v.Language,
-				Status:   v.Result,
-				Time:     time.Unix(v.EpochSecond, 0),
-			}
-			res = append(res, tmp)
+		if len(atc) == 0 {
+			break
 		}
+		newRows := make([]atcJson, 0, len(atc))
+		lastSecond := fromSecond
+		for _, row := range atc {
+			if row.EpochSecond > lastSecond {
+				lastSecond = row.EpochSecond
+			}
+			if _, ok := seen[row.ID]; ok {
+				continue
+			}
+			seen[row.ID] = struct{}{}
+			newRows = append(newRows, row)
+		}
+		res = append(res, atCoderRowsToSubmitLogs(userId, newRows)...)
+		if !needAll || len(atc) < atCoderPageSize {
+			break
+		}
+		if len(newRows) == 0 || lastSecond <= fromSecond {
+			return nil, fmt.Errorf("AtCoder 翻页没有前进，停止以避免重复抓取: user=%s from_second=%d", username, fromSecond)
+		}
+		fromSecond = lastSecond
+		time.Sleep(300 * time.Millisecond)
 	}
 	return res, nil
 }

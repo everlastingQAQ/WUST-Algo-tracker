@@ -1,6 +1,7 @@
 package platform
 
 import (
+	"bytes"
 	"cwxu-algo/app/core_data/internal/data/model"
 	"cwxu-algo/app/core_data/internal/spider"
 	"encoding/json"
@@ -8,6 +9,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -31,6 +33,7 @@ type Submission struct {
 type NewNowCoder struct{}
 
 var nowCoderProblemPathRe = regexp.MustCompile(`/acm/problem/([^/?#]+)`)
+var nowCoderNumericUserIDRe = regexp.MustCompile(`^\d+$`)
 
 func normalizeNowCoderProblem(problemID, title string) string {
 	problemID = strings.TrimSpace(problemID)
@@ -102,7 +105,10 @@ func analysisSubs(doc *goquery.Document) []Submission {
 	return subs
 }
 
-func (nc NewNowCoder) fetchSub(userId int64, username string, needAll bool) []model.SubmitLog {
+func (nc NewNowCoder) fetchSub(userId int64, username string, needAll bool) ([]model.SubmitLog, error) {
+	if !nowCoderNumericUserIDRe.MatchString(username) {
+		return nil, nil
+	}
 	// ===== record 定义（必须是命名类型）=====
 	type Record struct {
 		Problem struct {
@@ -136,8 +142,15 @@ func (nc NewNowCoder) fetchSub(userId int64, username string, needAll bool) []mo
 	}
 
 	doReq := func(page int) (*Resp, error) {
-		body := fmt.Sprintf(`{"pageNo":%d,"pageSize":%d,"userId":%s}`, page, pageSize, username)
-		req, err := http.NewRequest("POST", api, strings.NewReader(body))
+		body, err := json.Marshal(map[string]interface{}{
+			"pageNo":   page,
+			"pageSize": pageSize,
+			"userId":   username,
+		})
+		if err != nil {
+			return nil, err
+		}
+		req, err := http.NewRequest("POST", api, bytes.NewReader(body))
 		if err != nil {
 			return nil, err
 		}
@@ -148,6 +161,10 @@ func (nc NewNowCoder) fetchSub(userId int64, username string, needAll bool) []mo
 			return nil, err
 		}
 		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			return nil, fmt.Errorf("nowcoder training api http %d: %s", resp.StatusCode, string(body))
+		}
 
 		bs, err := io.ReadAll(resp.Body)
 		if err != nil {
@@ -157,6 +174,9 @@ func (nc NewNowCoder) fetchSub(userId int64, username string, needAll bool) []mo
 		var r Resp
 		if err := json.Unmarshal(bs, &r); err != nil {
 			return nil, err
+		}
+		if !r.Success {
+			return nil, fmt.Errorf("nowcoder training api success=false page=%d", page)
 		}
 		return &r, nil
 	}
@@ -185,19 +205,19 @@ func (nc NewNowCoder) fetchSub(userId int64, username string, needAll bool) []mo
 	// ===== 第 1 页 =====
 	first, err := doReq(1)
 	if err != nil {
-		return result
+		return nil, err
 	}
 
 	totalPage := first.Data.TotalPage
 	if !handle(first.Data.Records) {
-		return result
+		return result, nil
 	}
 
 	// ===== 后续分页 =====
 	for page := 2; page <= totalPage; page++ {
 		r, err := doReq(page)
 		if err != nil {
-			break
+			return nil, err
 		}
 		if len(r.Data.Records) == 0 {
 			break
@@ -206,15 +226,19 @@ func (nc NewNowCoder) fetchSub(userId int64, username string, needAll bool) []mo
 			break
 		}
 	}
-	return result
+	return result, nil
 }
 
 func (nc NewNowCoder) FetchSubmitLog(userId int64, username string, needAll bool) ([]model.SubmitLog, error) {
-	url := fmt.Sprintf(
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return nil, fmt.Errorf("NowCoder 用户 ID 不能为空")
+	}
+	profileURL := fmt.Sprintf(
 		"https://ac.nowcoder.com/acm/contest/profile/%s/practice-coding?pageSize=100&page=1",
-		username,
+		url.QueryEscape(username),
 	)
-	doc, err := getSubLogResp(url)
+	doc, err := getSubLogResp(profileURL)
 	if err != nil {
 		return nil, err
 	}
@@ -231,24 +255,37 @@ func (nc NewNowCoder) FetchSubmitLog(userId int64, username string, needAll bool
 	subs = append(subs, analysisSubs(doc)...)
 	if needAll {
 		// 再获取其他页的数据
-		totPage := (totalS + 99) / 100
+		totPage := 0
+		if totalS > 0 {
+			totPage = (totalS + 99) / 100
+		}
+		if totPage == 0 && len(subs) == 100 {
+			totPage = 10000
+		}
 		for i := 2; i <= totPage; i++ {
-			url := fmt.Sprintf(
+			pageURL := fmt.Sprintf(
 				"https://ac.nowcoder.com/acm/contest/profile/%s/practice-coding?pageSize=100&page=%d",
-				username, i,
+				url.QueryEscape(username), i,
 			)
-			doc, err := getSubLogResp(url)
+			doc, err := getSubLogResp(pageURL)
 			if err != nil {
 				return nil, err
 			}
-			subs = append(subs, analysisSubs(doc)...)
+			pageSubs := analysisSubs(doc)
+			if len(pageSubs) == 0 {
+				break
+			}
+			subs = append(subs, pageSubs...)
 		}
 	}
 	// 转为model类型
 	res := make([]model.SubmitLog, 0)
 	for _, v := range subs {
 		loc, _ := time.LoadLocation("Asia/Shanghai")
-		timeParse, _ := time.ParseInLocation("2006-01-02 15:04:05", v.SubmitTime, loc)
+		timeParse, err := time.ParseInLocation("2006-01-02 15:04:05", v.SubmitTime, loc)
+		if err != nil {
+			return nil, fmt.Errorf("解析 NowCoder 提交时间失败 runID=%s time=%q: %w", v.RunID, v.SubmitTime, err)
+		}
 		tmp := model.SubmitLog{
 			UserID:   userId,
 			Platform: spider.NowCoder,
@@ -261,7 +298,11 @@ func (nc NewNowCoder) FetchSubmitLog(userId int64, username string, needAll bool
 		}
 		res = append(res, tmp)
 	}
-	res = append(res, nc.fetchSub(userId, username, needAll)...)
+	trainingLogs, err := nc.fetchSub(userId, username, needAll)
+	if err != nil {
+		return nil, err
+	}
+	res = append(res, trainingLogs...)
 	return res, nil
 }
 

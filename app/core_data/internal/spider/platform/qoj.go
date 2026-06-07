@@ -190,6 +190,10 @@ func stripTags(s string) string {
 }
 
 func (q *NewQOJ) FetchSubmitLog(userId int64, username string, needAll bool) ([]model.SubmitLog, error) {
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return nil, fmt.Errorf("QOJ 用户名不能为空")
+	}
 	baseUrl := fmt.Sprintf("https://qoj.ac/submissions?submitter=%s&page=", url.QueryEscape(username))
 	client, err := q.getClient()
 	if err != nil {
@@ -217,6 +221,9 @@ func (q *NewQOJ) FetchSubmitLog(userId int64, username string, needAll bool) ([]
 		resp.Body.Close()
 		if err != nil {
 			return nil, err
+		}
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("QOJ 第 %d 页请求响应码错误 %d, %s", page, resp.StatusCode, string(rb))
 		}
 
 		html := string(rb)
@@ -249,14 +256,12 @@ func (q *NewQOJ) FetchSubmitLog(userId int64, username string, needAll bool) ([]
 			lang := stripTags(cells[6][1])
 			timeStr := stripTags(cells[8][1])
 
-			status := "WA"
-			if strings.HasPrefix(rawStatus, "AC") || strings.HasPrefix(rawStatus, "Accepted") {
-				status = "AC"
-			} else if strings.HasPrefix(rawStatus, "CE") {
-				status = "CE"
-			}
+			status := normalizeQOJStatus(rawStatus)
 
-			t, _ := time.ParseInLocation("2006-01-02 15:04:05", timeStr, loc)
+			t, err := time.ParseInLocation("2006-01-02 15:04:05", timeStr, loc)
+			if err != nil {
+				return nil, fmt.Errorf("解析 QOJ 提交时间失败 submitID=%s time=%q: %w", submitID, timeStr, err)
+			}
 
 			res = append(res, model.SubmitLog{
 				UserID:   userId,
@@ -283,6 +288,33 @@ func (q *NewQOJ) FetchSubmitLog(userId int64, username string, needAll bool) ([]
 	}
 
 	return res, nil
+}
+
+func normalizeQOJStatus(rawStatus string) string {
+	status := strings.TrimSpace(rawStatus)
+	upper := strings.ToUpper(status)
+	switch {
+	case strings.Contains(status, "✓") || strings.HasPrefix(upper, "100"):
+		return "AC"
+	case strings.HasPrefix(upper, "AC") || strings.HasPrefix(upper, "ACCEPTED"):
+		return "AC"
+	case strings.HasPrefix(upper, "CE") || strings.Contains(upper, "COMPILE"):
+		return "CE"
+	case strings.HasPrefix(upper, "TLE") || upper == "TL" || strings.Contains(upper, "TIME LIMIT"):
+		return "TLE"
+	case strings.HasPrefix(upper, "WA") || strings.Contains(upper, "WRONG"):
+		return "WA"
+	case strings.HasPrefix(upper, "RE") || strings.Contains(upper, "RUNTIME"):
+		return "RE"
+	case strings.HasPrefix(upper, "MLE") || upper == "ML" || strings.Contains(upper, "MEMORY"):
+		return "MLE"
+	case status == "0":
+		return "WA"
+	case status == "":
+		return "UNKNOWN"
+	default:
+		return status
+	}
 }
 
 func (q *NewQOJ) Name() string {
