@@ -421,9 +421,7 @@ func (s SpiderService) SetSpider(ctx context.Context, req *spider.SetSpiderReq) 
 	if err := s.db.Where("user_id = ? AND platform = ?", req.UserId, req.Platform).Delete(&model.SubmitLog{}).Error; err != nil {
 		log.Errorf("SetSpider: delete submit_log failed: %v", err)
 	}
-	if err := s.rdb.Del(ctx, fmt.Sprintf("core:submit_log:user:%d", req.UserId), "core:submit_log:user:-1").Err(); err != nil {
-		log.Errorf("SetSpider: redis del failed: %v", err)
-	}
+	s.invalidateUserStatisticCache(ctx, req.UserId)
 	err := s.db.Save(&platform).Error
 	if err != nil {
 		log.Errorf("SetSpider: save platform failed: %v", err)
@@ -436,6 +434,36 @@ func (s SpiderService) SetSpider(ctx context.Context, req *spider.SetSpiderReq) 
 		Code:    0,
 		Message: "设置成功，请稍等片刻，您的全量OJ数据正在更新",
 	}, nil
+}
+
+func (s SpiderService) invalidateUserStatisticCache(ctx context.Context, userId int64) {
+	if err := s.rdb.Del(
+		ctx,
+		fmt.Sprintf("core:submit_log:user:%d", userId),
+		"core:submit_log:user:-1",
+		fmt.Sprintf("user:%d:lastSubmitTime", userId),
+		fmt.Sprintf("statistic:period:%d", userId),
+		"statistic:period:-1",
+		fmt.Sprintf("statistic:platform-period:%d", userId),
+		"statistic:platform-period:-1",
+	).Err(); err != nil {
+		log.Errorf("SetSpider: redis del failed: %v", err)
+	}
+
+	for _, pattern := range []string{
+		fmt.Sprintf("statistic:heatmap:%d:*:*:*", userId),
+		"statistic:heatmap:0:*:*:*",
+	} {
+		iter := s.rdb.Scan(ctx, 0, pattern, 200).Iterator()
+		for iter.Next(ctx) {
+			if err := s.rdb.Del(ctx, iter.Val()).Err(); err != nil {
+				log.Errorf("SetSpider: redis del pattern=%s key=%s failed: %v", pattern, iter.Val(), err)
+			}
+		}
+		if err := iter.Err(); err != nil {
+			log.Errorf("SetSpider: redis scan pattern=%s failed: %v", pattern, err)
+		}
+	}
 }
 
 func NewSpiderService(data *data.Data, spider *task.SpiderTask) *SpiderService {
