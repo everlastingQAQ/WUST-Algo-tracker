@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -17,6 +18,11 @@ import (
 )
 
 type NewCodeforces struct{}
+
+var (
+	codeforcesAPIBaseURL = "https://codeforces.com/api/user.status"
+	codeforcesPageSize   = 10000
+)
 
 type CFResponse struct {
 	Status string   `json:"status"`
@@ -35,54 +41,95 @@ type cfJson struct {
 	CreationTimeSeconds int64  `json:"creationTimeSeconds"`
 }
 
-func (p NewCodeforces) FetchSubmitLog(userId int64, username string, needAll bool) (res []model.SubmitLog, err error) {
-	need := 1000
-	if needAll == true {
-		need = 1000000
-	}
-	handle := username
-	last_commit := 1
-	url := fmt.Sprintf(
-		"https://codeforces.com/api/user.status?handle=%s&from=%d&count=%d",
-		handle, last_commit, need,
-	)
-	resp, err := http.Get(url)
+func fetchCodeforcesPage(client *http.Client, baseURL string, username string, from int, count int) (CFResponse, error) {
+	u, err := url.Parse(baseURL)
 	if err != nil {
-		return nil, fmt.Errorf("发起http请求失败: %s", err.Error())
+		return CFResponse{}, err
+	}
+	q := u.Query()
+	q.Set("handle", username)
+	q.Set("from", strconv.Itoa(from))
+	q.Set("count", strconv.Itoa(count))
+	u.RawQuery = q.Encode()
+
+	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
+	if err != nil {
+		return CFResponse{}, err
+	}
+	req.Header.Set("User-Agent", "WUST-ACM-Tracker/1.1 (+https://github.com/WUSTACM/WUST-Algo-tracker)")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return CFResponse{}, fmt.Errorf("发起http请求失败: %s", err.Error())
 	}
 	defer resp.Body.Close()
 	// 校验状态码
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("请求响应码错误 %d, %s", resp.StatusCode, string(body))
+		return CFResponse{}, fmt.Errorf("请求响应码错误 %d, %s", resp.StatusCode, string(body))
 	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("解析body错误: %s", err.Error())
+		return CFResponse{}, fmt.Errorf("解析body错误: %s", err.Error())
 	}
 
 	var cfResp CFResponse
 	err = json.Unmarshal(body, &cfResp)
 	if err != nil {
-		return nil, fmt.Errorf("解析json错误：%s", err.Error())
+		return CFResponse{}, fmt.Errorf("解析json错误：%s", err.Error())
 	}
 
 	if cfResp.Status != "OK" {
-		return nil, fmt.Errorf("API status error: %s", cfResp.Status)
+		return CFResponse{}, fmt.Errorf("API status error: %s", cfResp.Status)
 	}
+	return cfResp, nil
+}
 
-	for _, sub := range cfResp.Result {
-		t := model.SubmitLog{
+func codeforcesRowsToSubmitLogs(userId int64, rows []cfJson) []model.SubmitLog {
+	res := make([]model.SubmitLog, 0, len(rows))
+	for _, sub := range rows {
+		problemName := strings.TrimSpace(sub.Problem.Name)
+		problemIndex := strings.TrimSpace(sub.Problem.Index)
+		problem := problemIndex
+		if problemName != "" {
+			problem = fmt.Sprintf("%s-%s", problemIndex, problemName)
+		}
+		res = append(res, model.SubmitLog{
 			UserID:   userId,
 			Platform: spider.CodeForces,
 			SubmitID: strconv.Itoa(sub.ID),
 			Contest:  strconv.Itoa(sub.ContestID),
-			Problem:  fmt.Sprintf("%s-%s", sub.Problem.Index, sub.Problem.Name),
+			Problem:  problem,
 			Lang:     sub.ProgrammingLanguage,
 			Status:   sub.Verdict,
 			Time:     time.Unix(sub.CreationTimeSeconds, 0),
+		})
+	}
+	return res
+}
+
+func (p NewCodeforces) FetchSubmitLog(userId int64, username string, needAll bool) (res []model.SubmitLog, err error) {
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return nil, fmt.Errorf("CodeForces 用户名不能为空")
+	}
+	client := &http.Client{Timeout: 30 * time.Second}
+	pageSize := codeforcesPageSize
+	if !needAll {
+		pageSize = 1000
+	}
+	from := 1
+	for {
+		cfResp, err := fetchCodeforcesPage(client, codeforcesAPIBaseURL, username, from, pageSize)
+		if err != nil {
+			return nil, err
 		}
-		res = append(res, t)
+		res = append(res, codeforcesRowsToSubmitLogs(userId, cfResp.Result)...)
+		if !needAll || len(cfResp.Result) < pageSize {
+			break
+		}
+		from += len(cfResp.Result)
+		time.Sleep(300 * time.Millisecond)
 	}
 	return res, nil
 }

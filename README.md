@@ -41,6 +41,8 @@ v1.1.3 聚焦工程质量和权限补洞：
 - 错误提示配合：后端权限错误继续返回明确原因，前端 v1.1.3 会统一展示这些错误。
 - CI/CD：新增 GitHub Actions 后端 CI 和手动发布工作流，支持构建、测试、打包、上传、服务器备份、重启和健康检查。
 - 抓取可靠性：单平台刷新增加同平台任务去重、按平台限流和失败任务重试入口，避免误触导致重复抓取。
+- 抓取一致性：全量刷新成功后按“用户 + 平台”替换旧提交，清理换绑或历史抓取 bug 留下的残留数据。
+- CodeForces：提交抓取改为分页拉取，避免 jiangly 等大号历史提交抓不全。
 
 ## v1.1.2 更新
 
@@ -312,6 +314,7 @@ bash deploy/scripts/init-admin.sh your_username
 | `GET` | `/v1/core/spider/jobs?scope=mine&status=running` | 查询抓取任务列表 |
 | `GET` | `/v1/core/spider/status?userId=1` | 查询用户各 OJ 最近抓取状态 |
 | `POST` | `/v1/core/spider/retry` | 重试失败的抓取任务，本人、教练和管理员可用 |
+| `POST` | `/v1/core/spider/rebuild-all` | 管理员/教练触发全站全量重爬 |
 
 任务状态：
 
@@ -346,6 +349,9 @@ bash deploy/scripts/init-admin.sh your_username
 - 全量刷新会与所有单平台刷新互斥；单平台刷新只与自身平台和全量刷新互斥。
 - 手动刷新按 `userId + platform` 做 60 秒限流，不同平台互不影响。
 - 失败任务可通过后台或 `/v1/core/spider/retry` 重试；重试仍遵循重复任务保护。
+- 全量刷新采用平台级替换同步：平台抓取成功后删除该用户该平台旧提交，再写入本次完整提交，避免账号换绑或历史分页 bug 产生残留。
+- 抓取结果会校验 `submit_id` 和提交时间，并对同一批次重复 `submit_id` 去重；全部无效时拒绝写入，保留旧数据并记录失败原因。
+- CodeForces 使用分页抓取全量提交，不依赖一次性超大 `count`。
 
 相关数据库表由 GORM `AutoMigrate` 自动创建：
 
@@ -411,13 +417,15 @@ go build -o /tmp/wust-agent ./app/agent/cmd/agent
 常规测试：
 
 ```bash
-go test ./app/core_data/internal/data/dal ./app/core_data/task ./app/user/internal/service ./app/user/internal/data/dal
+go test ./app/core_data/internal/data/dal ./app/core_data/internal/biz/service ./app/core_data/internal/spider/platform ./app/core_data/task ./app/user/internal/service ./app/user/internal/data/dal
 ```
 
 当前重点覆盖：
 
 - AC 状态识别与 `platform + problem` 去重。
 - 排名和统计使用的基础去重规则。
+- CodeForces 分页抓取。
+- 全量抓取结果清洗、去重和无效数据保护。
 - 团队队长权限判断。
 - 注册邀请码校验。
 - 私信内容长度和空内容校验。

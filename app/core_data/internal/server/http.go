@@ -121,5 +121,23 @@ func NewHTTPServer(c *conf.Server, logger log.Logger, submitService *service.Sub
 		}
 		_ = json.NewEncoder(w).Encode(res)
 	})
+	srv.HandleFunc("/v1/core/spider/rebuild-all", func(w nethttp.ResponseWriter, r *nethttp.Request) {
+		if r.Method != nethttp.MethodPost {
+			w.WriteHeader(nethttp.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		res, err := spiderService.RebuildAll(r.Context())
+		if err != nil {
+			statusCode := nethttp.StatusInternalServerError
+			if se := kerrors.FromError(err); se != nil {
+				statusCode = int(se.Code)
+			}
+			w.WriteHeader(statusCode)
+			_ = json.NewEncoder(w).Encode(map[string]any{"code": statusCode, "message": err.Error()})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(res)
+	})
 	return srv
 }

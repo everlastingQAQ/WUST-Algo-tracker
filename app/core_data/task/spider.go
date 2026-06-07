@@ -14,6 +14,8 @@ import (
 
 var ErrActiveRefreshJob = errors.New("active spider refresh job already exists")
 
+const activeRefreshJobTTL = 2 * 60 * 60 // seconds
+
 type SpiderTask struct {
 	rabbitMQ *amqp.Channel
 	db       *gorm.DB
@@ -87,6 +89,9 @@ func (t *SpiderTask) Do(userId int64, needAll bool, source string, requesterId i
 }
 
 func (t *SpiderTask) findActiveJob(userId int64, platform string) (model.SpiderRefreshJob, error) {
+	if err := t.expireStaleActiveJobs(userId, platform); err != nil {
+		return model.SpiderRefreshJob{}, err
+	}
 	var job model.SpiderRefreshJob
 	query := t.db.
 		Where("user_id = ?", userId).
@@ -98,4 +103,17 @@ func (t *SpiderTask) findActiveJob(userId int64, platform string) (model.SpiderR
 		return model.SpiderRefreshJob{}, nil
 	}
 	return job, err
+}
+
+func (t *SpiderTask) expireStaleActiveJobs(userId int64, platform string) error {
+	condition, args := ActiveRefreshConflictCondition(platform)
+	query := t.db.Model(&model.SpiderRefreshJob{}).
+		Where("user_id = ?", userId).
+		Where("status IN ?", []string{"queued", "running"}).
+		Where("updated_at < NOW() - (? * INTERVAL '1 second')", activeRefreshJobTTL).
+		Where(condition, args...)
+	return query.Updates(map[string]interface{}{
+		"status": "failed",
+		"error":  "抓取任务长时间未更新，已自动标记为失败，可重新发起刷新",
+	}).Error
 }

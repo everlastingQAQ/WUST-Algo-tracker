@@ -84,12 +84,24 @@ func (uc *SpiderUseCase) fetchAndSave(userId int64, plat model.Platform, needAll
 	if err != nil {
 		return 0, err
 	}
-	if len(tmp) == 0 {
-		return 0, nil
+	tmp, skipped, err := normalizeFetchedSubmitLogs(userId, plat.Platform, tmp)
+	if err != nil {
+		return 0, err
+	}
+	if skipped > 0 {
+		log.Warnf("Spider: %s %s 跳过 %d 条无效或重复提交", plat.Platform, plat.Username, skipped)
 	}
 
-	err = uc.data.DB.
-		Clauses(clause.OnConflict{
+	err = uc.data.DB.Transaction(func(tx *gorm.DB) error {
+		if needAll {
+			if err := tx.Where("user_id = ? AND platform = ?", userId, plat.Platform).Delete(&model.SubmitLog{}).Error; err != nil {
+				return err
+			}
+		}
+		if len(tmp) == 0 {
+			return nil
+		}
+		return tx.Clauses(clause.OnConflict{
 			Columns: []clause.Column{{Name: "platform"}, {Name: "submit_id"}},
 			DoUpdates: clause.AssignmentColumns([]string{
 				"user_id",
@@ -100,7 +112,8 @@ func (uc *SpiderUseCase) fetchAndSave(userId int64, plat model.Platform, needAll
 				"time",
 			}),
 		}).
-		Save(&tmp).Error
+			Create(&tmp).Error
+	})
 	return len(tmp), err
 }
 
@@ -121,12 +134,18 @@ func (uc *SpiderUseCase) fetchAndSaveContest(userId int64, plat model.Platform, 
 		return nil
 	}
 
-	return uc.data.DB.
-		Clauses(clause.OnConflict{
+	return uc.data.DB.Transaction(func(tx *gorm.DB) error {
+		if needAll {
+			if err := tx.Where("user_id = ? AND platform = ?", userId, plat.Platform).Delete(&model.ContestLog{}).Error; err != nil {
+				return err
+			}
+		}
+		return tx.Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "contest_id"}, {Name: "user_id"}},
 			DoNothing: true,
 		}).
-		Save(&tmp).Error
+			Create(&tmp).Error
+	})
 }
 
 func (uc *SpiderUseCase) loadOnePlatform(userId int64, plat model.Platform, needAll bool) (int, error) {

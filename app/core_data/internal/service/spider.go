@@ -45,6 +45,15 @@ type RetryJobReply struct {
 	JobId   int64  `json:"jobId"`
 }
 
+type RebuildAllReply struct {
+	Code       int64   `json:"code"`
+	Message    string  `json:"message"`
+	TotalUsers int64   `json:"totalUsers"`
+	QueuedJobs int64   `json:"queuedJobs"`
+	Skipped    int64   `json:"skipped"`
+	JobIds     []int64 `json:"jobIds"`
+}
+
 func (s *SpiderService) getLimiter(userId int64, interval time.Duration) *rate.Limiter {
 	return s.getLimiterByKey(fmt.Sprintf("user:%d", userId), interval)
 }
@@ -277,6 +286,47 @@ func (s SpiderService) Retry(ctx context.Context, jobId int64) (*RetryJobReply, 
 		Message: "重试任务已加入队列",
 		JobId:   newJobId,
 	}, nil
+}
+
+func (s SpiderService) RebuildAll(ctx context.Context) (*RebuildAllReply, error) {
+	current := auth.GetCurrentUser(ctx)
+	if current == nil {
+		return nil, errors.Unauthorized("未登录", "请先登录")
+	}
+	if current.RoleID != permission.RoleAdmin && current.RoleID != permission.RoleCoach {
+		return nil, errors.Forbidden("权限错误", "只有管理员和教练可以触发全站重爬")
+	}
+
+	var userIds []int64
+	if err := s.db.Model(&model.Platform{}).
+		Distinct("user_id").
+		Order("user_id ASC").
+		Pluck("user_id", &userIds).Error; err != nil {
+		return nil, InternalError
+	}
+
+	reply := &RebuildAllReply{
+		Code:       0,
+		Message:    "全站全量重爬任务已提交",
+		TotalUsers: int64(len(userIds)),
+		JobIds:     make([]int64, 0, len(userIds)),
+	}
+	for _, userId := range userIds {
+		jobId, err := s.spider.Do(userId, true, "admin_rebuild", int64(current.UserID), "")
+		if err != nil {
+			if stderrors.Is(err, task.ErrActiveRefreshJob) {
+				reply.Skipped++
+				if jobId > 0 {
+					reply.JobIds = append(reply.JobIds, jobId)
+				}
+				continue
+			}
+			return nil, InternalError
+		}
+		reply.QueuedJobs++
+		reply.JobIds = append(reply.JobIds, jobId)
+	}
+	return reply, nil
 }
 
 func (s SpiderService) Status(ctx context.Context, req *spider.StatusReq) (*spider.StatusRes, error) {

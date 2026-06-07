@@ -22,7 +22,7 @@ jobs:
 
       - name: Run focused tests
         run: |
-          go test ./app/core_data/internal/data/dal ./app/core_data/task ./app/user/internal/service ./app/user/internal/data/dal
+          go test ./app/core_data/internal/data/dal ./app/core_data/internal/biz/service ./app/core_data/internal/spider/platform ./app/core_data/task ./app/user/internal/service ./app/user/internal/data/dal
 
       - name: Build backend services
         run: |
