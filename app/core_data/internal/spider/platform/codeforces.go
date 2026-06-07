@@ -33,12 +33,45 @@ type cfJson struct {
 	ID        int `json:"id"`
 	ContestID int `json:"contestId"`
 	Problem   struct {
-		Index string `json:"index"`
-		Name  string `json:"name"`
+		ContestID      int    `json:"contestId"`
+		ProblemsetName string `json:"problemsetName"`
+		Index          string `json:"index"`
+		Name           string `json:"name"`
 	} `json:"problem"`
 	ProgrammingLanguage string `json:"programmingLanguage"`
 	Verdict             string `json:"verdict"`
 	CreationTimeSeconds int64  `json:"creationTimeSeconds"`
+}
+
+func buildCodeforcesProblemKey(sub cfJson) string {
+	contestID := sub.Problem.ContestID
+	if contestID == 0 {
+		contestID = sub.ContestID
+	}
+	problemsetName := strings.TrimSpace(sub.Problem.ProblemsetName)
+	problemIndex := strings.TrimSpace(sub.Problem.Index)
+	problemName := strings.TrimSpace(sub.Problem.Name)
+
+	parts := make([]string, 0, 3)
+	if problemsetName != "" {
+		parts = append(parts, problemsetName)
+	}
+	if contestID != 0 {
+		parts = append(parts, strconv.Itoa(contestID))
+	}
+	if problemIndex != "" {
+		parts = append(parts, problemIndex)
+	}
+
+	prefix := strings.Join(parts, "-")
+	switch {
+	case prefix != "" && problemName != "":
+		return prefix + " " + problemName
+	case prefix != "":
+		return prefix
+	default:
+		return problemName
+	}
 }
 
 func fetchCodeforcesPage(client *http.Client, baseURL string, username string, from int, count int) (CFResponse, error) {
@@ -88,18 +121,12 @@ func fetchCodeforcesPage(client *http.Client, baseURL string, username string, f
 func codeforcesRowsToSubmitLogs(userId int64, rows []cfJson) []model.SubmitLog {
 	res := make([]model.SubmitLog, 0, len(rows))
 	for _, sub := range rows {
-		problemName := strings.TrimSpace(sub.Problem.Name)
-		problemIndex := strings.TrimSpace(sub.Problem.Index)
-		problem := problemIndex
-		if problemName != "" {
-			problem = fmt.Sprintf("%s-%s", problemIndex, problemName)
-		}
 		res = append(res, model.SubmitLog{
 			UserID:   userId,
 			Platform: spider.CodeForces,
 			SubmitID: strconv.Itoa(sub.ID),
 			Contest:  strconv.Itoa(sub.ContestID),
-			Problem:  problem,
+			Problem:  buildCodeforcesProblemKey(sub),
 			Lang:     sub.ProgrammingLanguage,
 			Status:   sub.Verdict,
 			Time:     time.Unix(sub.CreationTimeSeconds, 0),

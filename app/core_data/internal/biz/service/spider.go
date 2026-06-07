@@ -53,14 +53,14 @@ func (uc *SpiderUseCase) LoadData(jobId int64, userId int64, needAll bool, targe
 	var failed []string
 	for _, plat := range platforms {
 		uc.setCurrentPlatform(jobId, plat.Platform)
-		count, err := uc.loadOnePlatform(userId, plat, needAll)
+		count, skipped, err := uc.loadOnePlatform(userId, plat, needAll)
 		uc.finishPlatform(jobId, plat.Platform)
 		if err != nil {
 			failed = append(failed, fmt.Sprintf("%s: %v", plat.Platform, err))
 			uc.markPlatformFailed(userId, plat, err)
 			continue
 		}
-		uc.markPlatformSuccess(userId, plat, count)
+		uc.markPlatformSuccess(userId, plat, count, skipped)
 	}
 
 	if len(failed) > 0 {
@@ -73,22 +73,22 @@ func (uc *SpiderUseCase) LoadData(jobId int64, userId int64, needAll bool, targe
 	return nil
 }
 
-func (uc *SpiderUseCase) fetchAndSave(userId int64, plat model.Platform, needAll bool) (int, error) {
+func (uc *SpiderUseCase) fetchAndSave(userId int64, plat model.Platform, needAll bool) (int, int, error) {
 	p, ok := spider.Get(plat.Platform)
 	if !ok {
-		return 0, fmt.Errorf("平台插件不存在")
+		return 0, 0, fmt.Errorf("平台插件不存在")
 	}
 	sbFetch, ok := p.(spider.SubmitLogFetcher)
 	if !ok {
-		return 0, fmt.Errorf("平台未实现 SubmitLogFetcher")
+		return 0, 0, fmt.Errorf("平台未实现 SubmitLogFetcher")
 	}
 	tmp, err := sbFetch.FetchSubmitLog(userId, plat.Username, needAll)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	tmp, skipped, err := normalizeFetchedSubmitLogs(userId, plat.Platform, tmp)
 	if err != nil {
-		return 0, err
+		return 0, skipped, err
 	}
 	if skipped > 0 {
 		log.Warnf("Spider: %s %s 跳过 %d 条无效或重复提交", plat.Platform, plat.Username, skipped)
@@ -116,7 +116,7 @@ func (uc *SpiderUseCase) fetchAndSave(userId int64, plat model.Platform, needAll
 		}).
 			CreateInBatches(&tmp, spiderInsertBatchSize).Error
 	})
-	return len(tmp), err
+	return len(tmp), skipped, err
 }
 
 func (uc *SpiderUseCase) fetchAndSaveContest(userId int64, plat model.Platform, needAll bool) error {
@@ -150,20 +150,20 @@ func (uc *SpiderUseCase) fetchAndSaveContest(userId int64, plat model.Platform, 
 	})
 }
 
-func (uc *SpiderUseCase) loadOnePlatform(userId int64, plat model.Platform, needAll bool) (int, error) {
+func (uc *SpiderUseCase) loadOnePlatform(userId int64, plat model.Platform, needAll bool) (int, int, error) {
 	uc.markPlatformRunning(userId, plat)
 	// 限制最大重试次数
 	maxRetries := 12
 	var lastErr error
 	for i := 0; i < maxRetries; i++ {
-		count, err := uc.fetchAndSave(userId, plat, needAll)
+		count, skipped, err := uc.fetchAndSave(userId, plat, needAll)
 		if contestErr := uc.fetchAndSaveContest(userId, plat, needAll); contestErr != nil {
 			log.Errorf("Spider: fetchAndSaveContest %s %s 失败: %v", plat.Platform, plat.Username, contestErr)
 		}
 		if err == nil {
 			log.Infof("Spider: %s %s 成功", plat.Platform, plat.Username)
 			uc.invalidateCache(userId)
-			return count, nil
+			return count, skipped, nil
 		}
 		lastErr = err
 		if strings.Contains(err.Error(), "平台") {
@@ -173,7 +173,7 @@ func (uc *SpiderUseCase) loadOnePlatform(userId int64, plat model.Platform, need
 				plat.Username,
 				err,
 			)
-			return 0, err
+			return 0, skipped, err
 		}
 		log.Errorf(
 			"Spider: %s %s 失败 (重试 %d/%d): %v",
@@ -185,7 +185,7 @@ func (uc *SpiderUseCase) loadOnePlatform(userId int64, plat model.Platform, need
 		)
 		// needAll=false，不重试
 		if !needAll {
-			return 0, err
+			return 0, skipped, err
 		}
 		// needAll=true，重试最多12次
 		time.Sleep(5 * time.Second)
@@ -194,7 +194,7 @@ func (uc *SpiderUseCase) loadOnePlatform(userId int64, plat model.Platform, need
 		lastErr = fmt.Errorf("达到最大重试次数 %d", maxRetries)
 	}
 	log.Errorf("Spider: %s %s 达到最大重试次数 %d", plat.Platform, plat.Username, maxRetries)
-	return 0, lastErr
+	return 0, 0, lastErr
 }
 
 func (uc *SpiderUseCase) startJob(jobId int64, totalPlatforms int) {
@@ -265,7 +265,7 @@ func (uc *SpiderUseCase) markPlatformRunning(userId int64, plat model.Platform) 
 	})
 }
 
-func (uc *SpiderUseCase) markPlatformSuccess(userId int64, plat model.Platform, count int) {
+func (uc *SpiderUseCase) markPlatformSuccess(userId int64, plat model.Platform, count int, skipped int) {
 	now := time.Now()
 	uc.upsertPlatformStatus(userId, plat, map[string]interface{}{
 		"username":            plat.Username,
@@ -273,6 +273,7 @@ func (uc *SpiderUseCase) markPlatformSuccess(userId int64, plat model.Platform, 
 		"last_finished_at":    &now,
 		"last_success_at":     &now,
 		"last_fetched_count":  int64(count),
+		"last_skipped_count":  int64(skipped),
 		"last_error":          "",
 		"consecutive_failure": int64(0),
 	})

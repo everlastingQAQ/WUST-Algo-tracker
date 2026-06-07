@@ -46,7 +46,7 @@ func wireApp(confServer *conf.Server, confData *conf.Data, logger log.Logger) (*
 	client := data.NewDataRDB(dataData)
 	statisticDal := dal.NewStatisticDal(db, client)
 	statisticUseCase := service2.NewStatisticUseCase(statisticDal, client)
-	statisticService := service.NewStatistic(statisticUseCase)
+	statisticService := service.NewStatistic(statisticUseCase, dataData)
 	grpcServer := server.NewGRPCServer(confServer, logger, spiderService, submitLogService, statisticService)
 	register := discovery.NewConsulRegister(confServer)
 	contestLogService := service.NewContestLogService(spiderDal, dataData, register)

@@ -5,12 +5,14 @@ import (
 
 	"cwxu-algo/api/core/v1/statistic"
 	"cwxu-algo/app/core_data/internal/biz/service"
+	"cwxu-algo/app/core_data/internal/data"
 )
 
 // StatisticService 统计服务
 type StatisticService struct {
 	statistic.UnimplementedStatisticServer
-	uc *service.StatisticUseCase
+	uc   *service.StatisticUseCase
+	data *data.Data
 }
 
 type PlatformPeriodItem struct {
@@ -20,10 +22,11 @@ type PlatformPeriodItem struct {
 }
 
 // NewStatistic 创建统计服务
-func NewStatistic(uc *service.StatisticUseCase) *StatisticService {
+func NewStatistic(uc *service.StatisticUseCase, data *data.Data) *StatisticService {
 	return &StatisticService{
 		UnimplementedStatisticServer: statistic.UnimplementedStatisticServer{},
 		uc:                           uc,
+		data:                         data,
 	}
 }
 

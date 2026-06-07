@@ -32,6 +32,8 @@ func NewWhiteListMatcher() selector.MatchFunc {
 		"/api.core.v1.statistic.Statistic/Heatmap":           "",
 		"/api.core.v1.statistic.Statistic/PeriodCount":       "",
 		"/v1/core/statistic/platform-period":                 "",
+		"/v1/core/statistic/explanation":                     "",
+		"/v1/core/statistic/platform-detail":                 "",
 		"/api.core.v1.bulletin.Bulletin/Get":                 "",
 		"/api.core.v1.bulletin.Bulletin/List":                "",
 	}
@@ -95,6 +97,75 @@ func NewHTTPServer(c *conf.Server, logger log.Logger, submitService *service.Sub
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": data})
 	})
+	srv.HandleFunc("/v1/core/statistic/explanation", func(w nethttp.ResponseWriter, r *nethttp.Request) {
+		if r.Method != nethttp.MethodGet {
+			w.WriteHeader(nethttp.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(statisticService.Explanation())
+	})
+	srv.HandleFunc("/v1/core/statistic/platform-detail", func(w nethttp.ResponseWriter, r *nethttp.Request) {
+		if r.Method != nethttp.MethodGet {
+			w.WriteHeader(nethttp.StatusMethodNotAllowed)
+			return
+		}
+		userId, err := parseIntQuery(r, "userId", 0)
+		if err != nil {
+			writeHTTPError(w, nethttp.StatusBadRequest, "userId参数错误")
+			return
+		}
+		page, err := parseIntQuery(r, "page", 1)
+		if err != nil {
+			writeHTTPError(w, nethttp.StatusBadRequest, "page参数错误")
+			return
+		}
+		pageSize, err := parseIntQuery(r, "pageSize", 30)
+		if err != nil {
+			writeHTTPError(w, nethttp.StatusBadRequest, "pageSize参数错误")
+			return
+		}
+		res, err := statisticService.PlatformDetail(r.Context(), userId, r.URL.Query().Get("platform"), r.URL.Query().Get("mode"), page, pageSize)
+		writeHTTPJSON(w, res, err)
+	})
+	srv.HandleFunc("/v1/core/spider/audit", func(w nethttp.ResponseWriter, r *nethttp.Request) {
+		if r.Method != nethttp.MethodGet {
+			w.WriteHeader(nethttp.StatusMethodNotAllowed)
+			return
+		}
+		userId, err := parseIntQuery(r, "userId", 0)
+		if err != nil {
+			writeHTTPError(w, nethttp.StatusBadRequest, "userId参数错误")
+			return
+		}
+		res, err := statisticService.SpiderAudit(r.Context(), userId)
+		writeHTTPJSON(w, res, err)
+	})
+	srv.HandleFunc("/v1/core/statistic/cache-status", func(w nethttp.ResponseWriter, r *nethttp.Request) {
+		if r.Method != nethttp.MethodGet {
+			w.WriteHeader(nethttp.StatusMethodNotAllowed)
+			return
+		}
+		userId, err := parseIntQuery(r, "userId", -1)
+		if err != nil {
+			writeHTTPError(w, nethttp.StatusBadRequest, "userId参数错误")
+			return
+		}
+		res, err := statisticService.CacheStatus(r.Context(), userId)
+		writeHTTPJSON(w, res, err)
+	})
+	srv.HandleFunc("/v1/core/statistic/cache-clear", func(w nethttp.ResponseWriter, r *nethttp.Request) {
+		if r.Method != nethttp.MethodPost {
+			w.WriteHeader(nethttp.StatusMethodNotAllowed)
+			return
+		}
+		var req struct {
+			UserID int64 `json:"userId"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		res, err := statisticService.ClearCache(r.Context(), req.UserID)
+		writeHTTPJSON(w, res, err)
+	})
 	srv.HandleFunc("/v1/core/spider/retry", func(w nethttp.ResponseWriter, r *nethttp.Request) {
 		if r.Method != nethttp.MethodPost {
 			w.WriteHeader(nethttp.StatusMethodNotAllowed)
@@ -140,4 +211,32 @@ func NewHTTPServer(c *conf.Server, logger log.Logger, submitService *service.Sub
 		_ = json.NewEncoder(w).Encode(res)
 	})
 	return srv
+}
+
+func parseIntQuery(r *nethttp.Request, key string, fallback int64) (int64, error) {
+	raw := r.URL.Query().Get(key)
+	if raw == "" {
+		return fallback, nil
+	}
+	return strconv.ParseInt(raw, 10, 64)
+}
+
+func writeHTTPError(w nethttp.ResponseWriter, statusCode int, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+	_ = json.NewEncoder(w).Encode(map[string]any{"code": statusCode, "message": message})
+}
+
+func writeHTTPJSON(w nethttp.ResponseWriter, data any, err error) {
+	w.Header().Set("Content-Type", "application/json")
+	if err != nil {
+		statusCode := nethttp.StatusInternalServerError
+		if se := kerrors.FromError(err); se != nil {
+			statusCode = int(se.Code)
+		}
+		w.WriteHeader(statusCode)
+		_ = json.NewEncoder(w).Encode(map[string]any{"code": statusCode, "message": err.Error()})
+		return
+	}
+	_ = json.NewEncoder(w).Encode(data)
 }

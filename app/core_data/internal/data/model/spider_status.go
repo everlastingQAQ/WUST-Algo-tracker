@@ -13,6 +13,7 @@ type SpiderSyncStatus struct {
 	LastSuccessAt      *time.Time `gorm:"comment:最近成功抓取时间"`
 	LastError          string     `gorm:"type:text;comment:最近失败原因"`
 	LastFetchedCount   int64      `gorm:"comment:最近抓取提交数"`
+	LastSkippedCount   int64      `gorm:"comment:最近跳过异常/重复提交数"`
 	ConsecutiveFailure int64      `gorm:"comment:连续失败次数"`
 	CreatedAt          time.Time
 	UpdatedAt          time.Time

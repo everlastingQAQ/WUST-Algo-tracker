@@ -74,3 +74,31 @@ func TestCodeforcesFetchSubmitLogRecentOnlyUsesSinglePage(t *testing.T) {
 		t.Fatalf("len(logs) = %d, want 1", len(logs))
 	}
 }
+
+func TestBuildCodeforcesProblemKeyIncludesContestIdentity(t *testing.T) {
+	first := cfJson{ContestID: 1}
+	first.Problem.Index = "A"
+	first.Problem.Name = "Game"
+
+	second := cfJson{ContestID: 2}
+	second.Problem.Index = "A"
+	second.Problem.Name = "Game"
+
+	if buildCodeforcesProblemKey(first) == buildCodeforcesProblemKey(second) {
+		t.Fatalf("same index/name from different contests should not collapse: %q", buildCodeforcesProblemKey(first))
+	}
+	if got := buildCodeforcesProblemKey(first); got != "1-A Game" {
+		t.Fatalf("buildCodeforcesProblemKey(first) = %q, want %q", got, "1-A Game")
+	}
+}
+
+func TestBuildCodeforcesProblemKeyUsesProblemsetName(t *testing.T) {
+	row := cfJson{}
+	row.Problem.ProblemsetName = "acmsguru"
+	row.Problem.Index = "108"
+	row.Problem.Name = "Self-numbers II"
+
+	if got := buildCodeforcesProblemKey(row); got != "acmsguru-108 Self-numbers II" {
+		t.Fatalf("buildCodeforcesProblemKey(row) = %q", got)
+	}
+}

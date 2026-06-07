@@ -2,9 +2,9 @@ name: Backend CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, master]
   pull_request:
-    branches: [main]
+    branches: [main, master]
   workflow_dispatch:
 
 jobs:
@@ -26,7 +26,15 @@ jobs:
 
       - name: Build backend services
         run: |
-          go build -o /tmp/wust-user ./app/user/cmd/user
-          go build -o /tmp/wust-core-data ./app/core_data/cmd/core_data
+          mkdir -p dist
+          go build -o dist/wust-user ./app/user/cmd/user
+          go build -o dist/wust-core-data ./app/core_data/cmd/core_data
           cd app/gateway
-          go build -o /tmp/wust-gateway ./cmd/gateway
+          go build -o ../../dist/wust-gateway ./cmd/gateway
+
+      - name: Upload backend artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wust-algo-backend-bin
+          path: dist
+          if-no-files-found: error
