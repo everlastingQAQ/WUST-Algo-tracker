@@ -49,8 +49,8 @@ sudo chown -R acm_tracker:acm_tracker /opt/wust-algo
 
 sudo -iu acm_tracker
 cd /opt/wust-algo
-git clone https://github.com/everlastingQAQ/WUST-Algo-tracker.git tracker
-git clone https://github.com/everlastingQAQ/WUST-Algo-Frontend.git frontend
+git clone https://github.com/WUSTACM/WUST-Algo-tracker.git tracker
+git clone https://github.com/WUSTACM/WUST-Algo-Frontend.git frontend
 ```
 
 ## 3. Deploy Backend

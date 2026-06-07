@@ -2,7 +2,7 @@
 
 WUST Algo Tracker 是 WUST ACM 算法训练数据平台的后端仓库，包含用户服务、核心数据服务、网关、AI 总结服务以及一套适用于 Ubuntu 服务器的部署脚本。
 
-前端仓库：`https://github.com/everlastingQAQ/WUST-Algo-Frontend`
+前端仓库：`https://github.com/WUSTACM/WUST-Algo-Frontend`
 
 当前稳定版本：`v1.1.3`。版本变更记录见 [CHANGELOG.md](./CHANGELOG.md)。
 
@@ -105,8 +105,8 @@ cd /opt/wust-algo
 ### 3. 获取代码
 
 ```bash
-git clone https://github.com/everlastingQAQ/WUST-Algo-tracker.git tracker
-git clone https://github.com/everlastingQAQ/WUST-Algo-Frontend.git frontend
+git clone https://github.com/WUSTACM/WUST-Algo-tracker.git tracker
+git clone https://github.com/WUSTACM/WUST-Algo-Frontend.git frontend
 ```
 
 也可以将打包好的源码传到服务器后解压到 `tracker` 和 `frontend`。
