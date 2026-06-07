@@ -26,6 +26,8 @@ type StatisticPlatformSummary struct {
 	AcceptedSubmits   int64 `json:"acceptedSubmits"`
 	DistinctSubmitted int64 `json:"distinctSubmitted"`
 	DistinctAc        int64 `json:"distinctAc"`
+	FilteredDuplicate int64 `json:"filteredDuplicate"`
+	FilteredInvalid   int64 `json:"filteredInvalid"`
 }
 
 type StatisticDetailRecord struct {
@@ -39,6 +41,7 @@ type StatisticDetailRecord struct {
 	Status       string `json:"status"`
 	Time         int64  `json:"time"`
 	IncludedInAc bool   `json:"includedInAc"`
+	AuditReason  string `json:"auditReason"`
 }
 
 type StatisticProblemRecord struct {
@@ -59,26 +62,33 @@ type StatisticPlatformDetail struct {
 	PageSize int64                    `json:"pageSize"`
 	Total    int64                    `json:"total"`
 	Summary  StatisticPlatformSummary `json:"summary"`
+	Policy   []string                 `json:"policy"`
 	Records  []StatisticDetailRecord  `json:"records"`
 	Problems []StatisticProblemRecord `json:"problems"`
 }
 
 type SpiderAuditItem struct {
-	Platform            string `json:"platform"`
-	Username            string `json:"username"`
-	Status              string `json:"status"`
-	LastStartedAt       int64  `json:"lastStartedAt"`
-	LastFinishedAt      int64  `json:"lastFinishedAt"`
-	LastSuccessAt       int64  `json:"lastSuccessAt"`
-	LastFetchedCount    int64  `json:"lastFetchedCount"`
-	LastSkippedCount    int64  `json:"lastSkippedCount"`
-	LastError           string `json:"lastError"`
-	RawSubmitCount      int64  `json:"rawSubmitCount"`
-	DistinctSubmitCount int64  `json:"distinctSubmitCount"`
-	AcceptedSubmitCount int64  `json:"acceptedSubmitCount"`
-	DistinctAcCount     int64  `json:"distinctAcCount"`
-	InvalidRowCount     int64  `json:"invalidRowCount"`
-	IsStale             bool   `json:"isStale"`
+	Platform               string   `json:"platform"`
+	Username               string   `json:"username"`
+	Status                 string   `json:"status"`
+	LastStartedAt          int64    `json:"lastStartedAt"`
+	LastFinishedAt         int64    `json:"lastFinishedAt"`
+	LastSuccessAt          int64    `json:"lastSuccessAt"`
+	LastRawFetchedCount    int64    `json:"lastRawFetchedCount"`
+	LastFetchedCount       int64    `json:"lastFetchedCount"`
+	LastSkippedCount       int64    `json:"lastSkippedCount"`
+	LastError              string   `json:"lastError"`
+	RawSubmitCount         int64    `json:"rawSubmitCount"`
+	DistinctSubmitCount    int64    `json:"distinctSubmitCount"`
+	AcceptedSubmitCount    int64    `json:"acceptedSubmitCount"`
+	DistinctAcCount        int64    `json:"distinctAcCount"`
+	InvalidRowCount        int64    `json:"invalidRowCount"`
+	FilteredDuplicateCount int64    `json:"filteredDuplicateCount"`
+	FilteredAbnormalCount  int64    `json:"filteredAbnormalCount"`
+	CountPolicy            []string `json:"countPolicy"`
+	FilterReasons          []string `json:"filterReasons"`
+	AuditNotes             []string `json:"auditNotes"`
+	IsStale                bool     `json:"isStale"`
 }
 
 type SpiderAuditResponse struct {
@@ -138,6 +148,70 @@ func problemDistinctExprWithAlias(alias string) string {
 	return fmt.Sprintf("COALESCE(NULLIF(BTRIM(%s.problem), ''), %s.submit_id)", alias, alias)
 }
 
+func statisticCountPolicy(platform string) []string {
+	policy := []string{
+		"原始提交：数据库中保留的该平台提交记录总数。",
+		"去重提交：按 problem key 去重后的提交题目数。",
+		"AC 提交：状态识别为 AC/Accepted/正确/OK 的提交次数。",
+		"去重 AC：最终展示 AC 数，按 platform + problem key 去重。",
+		"problem key：优先使用题目标识，缺失时回退 submit_id；跨平台同名题不合并。",
+	}
+	switch strings.ToLower(platform) {
+	case "luogu":
+		policy = append(policy, "洛谷保留抓到的全部记录，可能包含 U/T/SP 等主页统计不展示的题目。")
+	case "codeforces":
+		policy = append(policy, "Codeforces 基于 user.status API，题目标识由 contestId/index/name 归一化生成。")
+	case "nowcoder":
+		policy = append(policy, "牛客按提交记录中的题目标识去重，可能与主页不同 tab 的展示口径不同。")
+	}
+	return policy
+}
+
+func auditReason(row model.SubmitLog) string {
+	problem := strings.TrimSpace(row.Problem)
+	submitID := strings.TrimSpace(row.SubmitID)
+	if submitID == "" {
+		return "提交 ID 缺失，审计中视为异常记录。"
+	}
+	keySource := "题目标识"
+	if problem == "" {
+		keySource = "submit_id 回退"
+	}
+	if isAcceptedStatus(row.Status) {
+		return fmt.Sprintf("AC 状态，进入 AC 候选；最终按 %s 去重。", keySource)
+	}
+	return fmt.Sprintf("非 AC 状态，仅计入原始提交和提交题，AC 统计不计入；problem key 来源：%s。", keySource)
+}
+
+func auditNotes(platform string, audit SpiderAuditItem) []string {
+	notes := []string{
+		fmt.Sprintf("库内原始提交 %d 条，去重提交题 %d 个。", audit.RawSubmitCount, audit.DistinctSubmitCount),
+		fmt.Sprintf("AC 提交 %d 条，最终去重 AC %d 题。", audit.AcceptedSubmitCount, audit.DistinctAcCount),
+	}
+	if audit.LastStartedAt > 0 {
+		notes = append(notes, fmt.Sprintf("最近一次抓取原始返回约 %d 条，有效写入 %d 条，跳过 %d 条。", audit.LastRawFetchedCount, audit.LastFetchedCount, audit.LastSkippedCount))
+	}
+	if audit.FilteredDuplicateCount > 0 {
+		notes = append(notes, fmt.Sprintf("库内有 %d 条重复提交记录会在题目维度统计时被去重。", audit.FilteredDuplicateCount))
+	}
+	if audit.InvalidRowCount > 0 {
+		notes = append(notes, fmt.Sprintf("检测到 %d 条提交 ID 或时间异常记录，需要优先排查爬虫返回。", audit.InvalidRowCount))
+	}
+	if audit.IsStale {
+		notes = append(notes, "最近成功同步已超过 24 小时，数字可能不是最新。")
+	}
+	if audit.LastError != "" {
+		notes = append(notes, "最近一次抓取失败原因已记录，可结合抓取任务日志排查。")
+	}
+	switch strings.ToLower(platform) {
+	case "luogu":
+		notes = append(notes, "洛谷主页通过数和本站可能不同：本站以抓取到的提交日志为准。")
+	case "codeforces":
+		notes = append(notes, "Codeforces 大账号可能包含海量历史提交；本站以 API 返回并成功写入的记录为准。")
+	}
+	return notes
+}
+
 func (s *StatisticService) PlatformDetail(ctx context.Context, userId int64, platform string, mode string, page int64, pageSize int64) (*StatisticPlatformDetail, error) {
 	if userId <= 0 {
 		return nil, errors.BadRequest("参数错误", "userId不能为空")
@@ -162,10 +236,12 @@ func (s *StatisticService) PlatformDetail(ctx context.Context, userId int64, pla
 			COUNT(*) AS raw_submits,
 			COUNT(CASE WHEN %s THEN 1 END) AS accepted_submits,
 			COUNT(DISTINCT %s) AS distinct_submitted,
-			COUNT(DISTINCT CASE WHEN %s THEN %s END) AS distinct_ac
+			COUNT(DISTINCT CASE WHEN %s THEN %s END) AS distinct_ac,
+			GREATEST(COUNT(*) - COUNT(DISTINCT %s), 0) AS filtered_duplicate,
+			COUNT(CASE WHEN BTRIM(submit_id) = '' OR time IS NULL THEN 1 END) AS filtered_invalid
 		FROM submit_logs
 		WHERE user_id = ? AND platform = ?
-	`, statisticAcSQL, problemDistinctExpr(), statisticAcSQL, problemDistinctExpr())
+	`, statisticAcSQL, problemDistinctExpr(), statisticAcSQL, problemDistinctExpr(), problemDistinctExpr())
 	if err := s.data.DB.Raw(summarySQL, userId, platform).Scan(&summary).Error; err != nil {
 		return nil, err
 	}
@@ -179,6 +255,7 @@ func (s *StatisticService) PlatformDetail(ctx context.Context, userId int64, pla
 		Page:     page,
 		PageSize: pageSize,
 		Summary:  summary,
+		Policy:   statisticCountPolicy(platform),
 	}
 
 	if mode == "submit" {
@@ -207,6 +284,7 @@ func (s *StatisticService) PlatformDetail(ctx context.Context, userId int64, pla
 				Status:       row.Status,
 				Time:         row.Time.Unix(),
 				IncludedInAc: isAcceptedStatus(row.Status),
+				AuditReason:  auditReason(row),
 			})
 		}
 		return resp, nil
@@ -299,15 +377,17 @@ func (s *StatisticService) SpiderAudit(ctx context.Context, userId int64) (*Spid
 	for _, platform := range platforms {
 		item := statusByPlatform[platform.Platform]
 		audit := SpiderAuditItem{
-			Platform:         platform.Platform,
-			Username:         platform.Username,
-			Status:           "never",
-			LastStartedAt:    toUnix(item.LastStartedAt),
-			LastFinishedAt:   toUnix(item.LastFinishedAt),
-			LastSuccessAt:    toUnix(item.LastSuccessAt),
-			LastFetchedCount: item.LastFetchedCount,
-			LastSkippedCount: item.LastSkippedCount,
-			LastError:        item.LastError,
+			Platform:            platform.Platform,
+			Username:            platform.Username,
+			Status:              "never",
+			LastStartedAt:       toUnix(item.LastStartedAt),
+			LastFinishedAt:      toUnix(item.LastFinishedAt),
+			LastSuccessAt:       toUnix(item.LastSuccessAt),
+			LastRawFetchedCount: item.LastFetchedCount + item.LastSkippedCount,
+			LastFetchedCount:    item.LastFetchedCount,
+			LastSkippedCount:    item.LastSkippedCount,
+			LastError:           item.LastError,
+			CountPolicy:         statisticCountPolicy(platform.Platform),
 		}
 		if item.Status != "" {
 			audit.Status = item.Status
@@ -321,11 +401,19 @@ func (s *StatisticService) SpiderAudit(ctx context.Context, userId int64) (*Spid
 				COUNT(DISTINCT %s) AS distinct_submit_count,
 				COUNT(CASE WHEN %s THEN 1 END) AS accepted_submit_count,
 				COUNT(DISTINCT CASE WHEN %s THEN %s END) AS distinct_ac_count,
-				COUNT(CASE WHEN BTRIM(submit_id) = '' OR time IS NULL THEN 1 END) AS invalid_row_count
+				COUNT(CASE WHEN BTRIM(submit_id) = '' OR time IS NULL THEN 1 END) AS invalid_row_count,
+				GREATEST(COUNT(*) - COUNT(DISTINCT %s), 0) AS filtered_duplicate_count
 			FROM submit_logs
 			WHERE user_id = ? AND platform = ?
-		`, problemDistinctExpr(), statisticAcSQL, statisticAcSQL, problemDistinctExpr())
+		`, problemDistinctExpr(), statisticAcSQL, statisticAcSQL, problemDistinctExpr(), problemDistinctExpr())
 		_ = s.data.DB.Raw(countSQL, userId, platform.Platform).Scan(&audit).Error
+		audit.FilteredAbnormalCount = audit.InvalidRowCount + audit.LastSkippedCount
+		audit.FilterReasons = []string{
+			"重复提交：同一 problem key 的多次提交只在 AC/提交题维度计为 1。",
+			"异常记录：submit_id 或时间缺失的记录会标记为异常，需结合最近错误排查。",
+			"非 AC 提交：保留在提交记录中，但不会进入最终 AC 数。",
+		}
+		audit.AuditNotes = auditNotes(platform.Platform, audit)
 		data = append(data, audit)
 	}
 	return &SpiderAuditResponse{

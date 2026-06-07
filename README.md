@@ -316,7 +316,7 @@ bash deploy/scripts/init-admin.sh your_username
 | `GET` | `/v1/core/spider/job?jobId=1` | 查询单个抓取任务 |
 | `GET` | `/v1/core/spider/jobs?scope=mine&status=running` | 查询抓取任务列表 |
 | `GET` | `/v1/core/spider/status?userId=1` | 查询用户各 OJ 最近抓取状态 |
-| `GET` | `/v1/core/spider/audit?userId=1` | 查询用户各 OJ 抓取审计数据 |
+| `GET` | `/v1/core/spider/audit?userId=1` | 查询用户各 OJ 抓取审计数据：原始抓取、有效写入、去重、异常和最近错误 |
 | `POST` | `/v1/core/spider/retry` | 重试失败的抓取任务，本人、教练和管理员可用 |
 | `POST` | `/v1/core/spider/rebuild-all` | 管理员/教练触发全站全量重爬 |
 
@@ -382,7 +382,19 @@ bash deploy/scripts/init-admin.sh your_username
 | `GET` | `/v1/core/statistic/cache-status?userId=-1` | 管理员/教练查看统计缓存状态 |
 | `POST` | `/v1/core/statistic/cache-clear` | 管理员/教练清理全站或指定用户统计缓存 |
 
-`platform-detail` 会返回平台汇总、AC 题列表或提交记录，包含 problem key、是否计入 AC、首次 AC 时间、提交次数等字段，用于排查 OJ 主页与本站统计差异。
+`platform-detail` 会返回平台汇总、计入口径、AC 题列表或提交记录，包含 problem key、是否计入 AC、审计说明、首次 AC 时间、提交次数等字段，用于排查 OJ 主页与本站统计差异。
+
+`spider/audit` 会按平台返回：
+
+- `lastRawFetchedCount`：最近一次抓取的原始返回量，约等于有效写入量加跳过量。
+- `lastFetchedCount`：最近一次清洗后有效写入的提交数。
+- `rawSubmitCount`：当前库内该平台原始提交记录数。
+- `distinctSubmitCount`：按 problem key 去重后的提交题数。
+- `acceptedSubmitCount`：状态为 AC/Accepted/正确/OK 的提交次数。
+- `distinctAcCount`：最终统计使用的去重 AC 题数。
+- `filteredDuplicateCount`：在题目维度统计时被去重掉的重复提交数。
+- `filteredAbnormalCount`：抓取清洗阶段跳过或库内检测到的异常记录数。
+- `countPolicy` / `auditNotes`：面向排查的口径说明和当前平台审计结论。
 
 缓存接口中 `userId=-1` 表示全站统计缓存；传具体用户 ID 时清理该用户相关统计和提交缓存。
 
