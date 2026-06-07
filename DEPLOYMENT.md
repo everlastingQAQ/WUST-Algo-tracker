@@ -29,7 +29,7 @@ getent group docker >/dev/null && sudo usermod -aG docker acm_tracker
 
 ```bash
 cd /opt/wust-algo
-git clone https://github.com/everlastingQAQ/WUST-Algo-tracker.git tracker
+git clone https://github.com/WUSTACM/WUST-Algo-tracker.git tracker
 cd /opt/wust-algo/tracker
 
 cp deploy/.env.example deploy/.env
