@@ -6,6 +6,7 @@ import (
 	"cwxu-algo/app/core_data/internal/data/model"
 	"encoding/json"
 	"errors"
+	"fmt"
 
 	"github.com/go-kratos/kratos/v2/log"
 	"github.com/streadway/amqp"
@@ -17,13 +18,13 @@ var ErrActiveRefreshJob = errors.New("active spider refresh job already exists")
 const activeRefreshJobTTL = 2 * 60 * 60 // seconds
 
 type SpiderTask struct {
-	rabbitMQ *amqp.Channel
+	rabbitMQ *event.RabbitMQ
 	db       *gorm.DB
 }
 
 func NewSpiderTask(rabbitMQ *event.RabbitMQ, data *data.Data) *SpiderTask {
 	return &SpiderTask{
-		rabbitMQ: rabbitMQ.Ch,
+		rabbitMQ: rabbitMQ,
 		db:       data.DB,
 	}
 }
@@ -55,15 +56,6 @@ func (t *SpiderTask) Do(userId int64, needAll bool, source string, requesterId i
 		return 0, err
 	}
 
-	q, err := t.rabbitMQ.QueueDeclare("spider", true, false, false, false, nil)
-	if err != nil {
-		log.Errorf("SpiderTask: QueueDeclare failed: %v", err)
-		_ = t.db.Model(&job).Updates(map[string]interface{}{
-			"status": "failed",
-			"error":  err.Error(),
-		}).Error
-		return int64(job.ID), err
-	}
 	e := event.SpiderEvent{UserId: userId, NeedAll: needAll, JobId: int64(job.ID), Platform: platform}
 	body, err := json.Marshal(e)
 	if err != nil {
@@ -74,11 +66,8 @@ func (t *SpiderTask) Do(userId int64, needAll bool, source string, requesterId i
 		}).Error
 		return int64(job.ID), err
 	}
-	if err := t.rabbitMQ.Publish("", q.Name, false, false, amqp.Publishing{
-		ContentType: "application/json",
-		Body:        body,
-	}); err != nil {
-		log.Errorf("SpiderTask: Publish failed: %v", err)
+	if err := t.publish(body); err != nil {
+		log.Errorf("SpiderTask: publish spider event failed: %v", err)
 		_ = t.db.Model(&job).Updates(map[string]interface{}{
 			"status": "failed",
 			"error":  err.Error(),
@@ -86,6 +75,38 @@ func (t *SpiderTask) Do(userId int64, needAll bool, source string, requesterId i
 		return int64(job.ID), err
 	}
 	return int64(job.ID), nil
+}
+
+func (t *SpiderTask) publish(body []byte) error {
+	ch, err := t.rabbitMQ.Channel()
+	if err == nil {
+		if err = publishToQueue(ch, "spider", body); err == nil {
+			return nil
+		}
+	}
+	log.Warnf("SpiderTask: rabbitmq publish failed, reconnecting: %v", err)
+	ch, reconnectErr := t.rabbitMQ.Reconnect()
+	if reconnectErr != nil {
+		if err != nil {
+			return fmt.Errorf("%w; reconnect failed: %v", err, reconnectErr)
+		}
+		return reconnectErr
+	}
+	return publishToQueue(ch, "spider", body)
+}
+
+func publishToQueue(ch *amqp.Channel, queue string, body []byte) error {
+	if ch == nil {
+		return errors.New("rabbitmq channel is not ready")
+	}
+	q, err := ch.QueueDeclare(queue, true, false, false, false, nil)
+	if err != nil {
+		return err
+	}
+	return ch.Publish("", q.Name, false, false, amqp.Publishing{
+		ContentType: "application/json",
+		Body:        body,
+	})
 }
 
 func (t *SpiderTask) findActiveJob(userId int64, platform string) (model.SpiderRefreshJob, error) {

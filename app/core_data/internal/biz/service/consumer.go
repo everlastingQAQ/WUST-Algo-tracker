@@ -3,34 +3,51 @@ package service
 import (
 	"cwxu-algo/app/common/event"
 	"encoding/json"
+	"errors"
+	"time"
 
 	"github.com/go-kratos/kratos/v2/log"
 	"github.com/streadway/amqp"
 )
 
 type Consumer struct {
-	ch     *amqp.Channel
-	spider *SpiderUseCase
+	rabbitMQ *event.RabbitMQ
+	spider   *SpiderUseCase
 }
 
 func NewConsumer(ch *event.RabbitMQ, spider *SpiderUseCase) *Consumer {
 	return &Consumer{
-		ch:     ch.Ch,
-		spider: spider,
+		rabbitMQ: ch,
+		spider:   spider,
 	}
 }
 
 func (c *Consumer) Consume() {
-	q, err := c.ch.QueueDeclare("spider", true, false, false, false, nil)
-	if err != nil {
-		log.Errorf("打开消息队列 Spider 失败: %v", err)
-		return
+	for {
+		if err := c.consumeOnce(); err != nil {
+			log.Errorf("RabbitMQ(Spider): consumer stopped: %v", err)
+		}
+		time.Sleep(3 * time.Second)
+		if _, err := c.rabbitMQ.Reconnect(); err != nil {
+			log.Errorf("RabbitMQ(Spider): reconnect failed: %v", err)
+			time.Sleep(5 * time.Second)
+		}
 	}
-	_ = c.ch.Qos(2, 0, false)
-	msgs, err := c.ch.Consume(q.Name, "", false, false, false, false, nil)
+}
+
+func (c *Consumer) consumeOnce() error {
+	ch, err := c.rabbitMQ.Channel()
 	if err != nil {
-		log.Errorf("打开消息队列 消息 失败: %v", err)
-		return
+		return err
+	}
+	q, err := ch.QueueDeclare("spider", true, false, false, false, nil)
+	if err != nil {
+		return err
+	}
+	_ = ch.Qos(2, 0, false)
+	msgs, err := ch.Consume(q.Name, "", false, false, false, false, nil)
+	if err != nil {
+		return err
 	}
 	for d := range msgs {
 		go func(d amqp.Delivery) {
@@ -56,4 +73,5 @@ func (c *Consumer) Consume() {
 			_ = d.Ack(false)
 		}(d)
 	}
+	return errors.New("spider consume channel closed")
 }
