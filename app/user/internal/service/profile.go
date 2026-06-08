@@ -203,6 +203,10 @@ func (p *ProfileService) ChangePassword(ctx context.Context, req *ChangePassword
 	if err := p.profileDal.ChangePassword(ctx, req.UserId, req.NewPassword); err != nil {
 		return nil, errors.InternalServer("内部错误", err.Error())
 	}
+	recordUserOperation(ctx, p.profileDal, "profile.change_password", "user", req.UserId, map[string]any{
+		"isSelf":  isSelf,
+		"isAdmin": isAdmin,
+	})
 	return &ChangePasswordReply{Success: true, Message: "密码已更新"}, nil
 }
 
@@ -211,27 +215,25 @@ func (p *ProfileService) DeleteUser(ctx context.Context, req *DeleteUserRequest)
 	if current == nil || current.UserID == 0 {
 		return nil, errors.Unauthorized("未登录", "请先登录")
 	}
-	if current.RoleID != permission.RoleAdmin {
-		return nil, errors.Forbidden("权限不足", "仅管理员可删除用户")
-	}
 	if req.UserId == 0 {
 		return nil, errors.BadRequest("参数错误", "用户ID不能为空")
-	}
-	if int64(current.UserID) == req.UserId {
-		return nil, errors.Forbidden("权限不足", "不能删除当前登录账号")
 	}
 
 	target, err := p.profileDal.GetById(ctx, req.UserId)
 	if err != nil {
 		return nil, errors.BadRequest("用户不存在", "用户不存在")
 	}
-	if target.RoleID == permission.RoleAdmin {
-		return nil, errors.Forbidden("权限不足", "不能删除管理员账号")
+	if !canDeleteUser(int64(current.UserID), current.RoleID, req.UserId, target.RoleID) {
+		return nil, errors.Forbidden("权限不足", "仅管理员可删除非管理员用户，且不能删除当前登录账号")
 	}
 
 	if err := p.profileDal.DeleteUser(ctx, req.UserId); err != nil {
 		return nil, errors.InternalServer("内部错误", err.Error())
 	}
+	recordUserOperation(ctx, p.profileDal, "profile.delete_user", "user", req.UserId, map[string]any{
+		"username": target.Username,
+		"roleId":   target.RoleID,
+	})
 	return &DeleteUserReply{Success: true, Message: "用户已删除"}, nil
 }
 

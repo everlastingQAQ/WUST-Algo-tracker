@@ -106,6 +106,11 @@ func (s SpiderService) Update(ctx context.Context, req *spider.UpdateReq) (*spid
 	if platform != "" {
 		message = fmt.Sprintf("更新成功，请稍等片刻，%s 数据正在更新", platform)
 	}
+	recordCoreOperation(ctx, s.db, "spider.update", "user", req.UserId, map[string]any{
+		"platform": platform,
+		"jobId":    jobId,
+		"source":   "manual",
+	})
 	return &spider.UpdateRes{
 		Code:    0,
 		Message: message,
@@ -143,7 +148,7 @@ func isCoachOrAdmin(ctx context.Context) bool {
 	if current == nil {
 		return false
 	}
-	return current.RoleID == permission.RoleAdmin || current.RoleID == permission.RoleCoach
+	return canManageCoreOps(current.RoleID)
 }
 
 func canViewUserDetail(ctx context.Context, userId int64) bool {
@@ -151,7 +156,15 @@ func canViewUserDetail(ctx context.Context, userId int64) bool {
 	if current == nil {
 		return false
 	}
-	return int64(current.UserID) == userId || current.RoleID == permission.RoleAdmin || current.RoleID == permission.RoleCoach
+	return canOperateUserDetail(int64(current.UserID), current.RoleID, userId)
+}
+
+func canManageCoreOps(roleID int) bool {
+	return roleID == permission.RoleAdmin || roleID == permission.RoleCoach
+}
+
+func canOperateUserDetail(currentUserID int64, roleID int, targetUserID int64) bool {
+	return currentUserID == targetUserID || canManageCoreOps(roleID)
 }
 
 func jobToPb(job model.SpiderRefreshJob, canViewError bool) *spider.JobInfo {
@@ -281,6 +294,11 @@ func (s SpiderService) Retry(ctx context.Context, jobId int64) (*RetryJobReply, 
 		}
 		return nil, InternalError
 	}
+	recordCoreOperation(ctx, s.db, "spider.retry", "spider_job", jobId, map[string]any{
+		"userId":   job.UserID,
+		"platform": platform,
+		"newJobId": newJobId,
+	})
 	return &RetryJobReply{
 		Code:    0,
 		Message: "重试任务已加入队列",
@@ -293,7 +311,7 @@ func (s SpiderService) RebuildAll(ctx context.Context) (*RebuildAllReply, error)
 	if current == nil {
 		return nil, errors.Unauthorized("未登录", "请先登录")
 	}
-	if current.RoleID != permission.RoleAdmin && current.RoleID != permission.RoleCoach {
+	if !canManageCoreOps(current.RoleID) {
 		return nil, errors.Forbidden("权限错误", "只有管理员和教练可以触发全站重爬")
 	}
 
@@ -326,6 +344,11 @@ func (s SpiderService) RebuildAll(ctx context.Context) (*RebuildAllReply, error)
 		reply.QueuedJobs++
 		reply.JobIds = append(reply.JobIds, jobId)
 	}
+	recordCoreOperation(ctx, s.db, "spider.rebuild_all", "spider_job", 0, map[string]any{
+		"totalUsers": reply.TotalUsers,
+		"queuedJobs": reply.QueuedJobs,
+		"skipped":    reply.Skipped,
+	})
 	return reply, nil
 }
 
@@ -430,6 +453,9 @@ func (s SpiderService) SetSpider(ctx context.Context, req *spider.SetSpiderReq) 
 	if _, err := s.spider.Do(req.UserId, true, "bind", int64(auth.GetCurrentUserId(ctx)), req.Platform); err != nil {
 		log.Errorf("SetSpider: enqueue spider task failed: %v", err)
 	}
+	recordCoreOperation(ctx, s.db, "spider.set_binding", "user", req.UserId, map[string]any{
+		"platform": req.Platform,
+	})
 	return &spider.SetSpiderRep{
 		Code:    0,
 		Message: "设置成功，请稍等片刻，您的全量OJ数据正在更新",

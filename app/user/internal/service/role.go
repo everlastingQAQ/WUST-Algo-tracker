@@ -43,23 +43,20 @@ func (r *RoleService) SetUserRole(ctx context.Context, req *role.SetUserRoleReq)
 	if err != nil {
 		return nil, errors.InternalServer("内部错误", "用户不存在")
 	}
-	// 4. 禁止修改自己的角色，避免误操作把最后一个管理员降级
+	// 4. 禁止修改自己的角色、管理员账号，避免误操作把最后一个管理员降级
 	callerId := auth.GetCurrentUserId(ctx)
-	if int64(callerId) == req.UserId {
-		return nil, errors.Forbidden("权限不足", "无法修改自己的角色")
+	if !canSetUserRole(int64(callerId), caller.RoleID, req.UserId, targetUser.RoleID, int(req.RoleId)) {
+		return nil, errors.Forbidden("权限不足", "不能修改自己、管理员账号，或通过后台直接授予管理员角色")
 	}
-	// 5. 管理员账号保护：不能修改管理员，也不能通过后台直接授予管理员
-	if targetUser.RoleID == permission.RoleAdmin {
-		return nil, errors.Forbidden("权限不足", "不能修改管理员账号角色")
-	}
-	if int(req.RoleId) == permission.RoleAdmin {
-		return nil, errors.Forbidden("权限不足", "不能通过后台直接授予管理员角色")
-	}
-	// 6. 执行更新
+	// 5. 执行更新
 	err = r.profileDal.SetRoleId(ctx, req.UserId, int(req.RoleId))
 	if err != nil {
 		return nil, errors.InternalServer("内部错误", "更新角色失败")
 	}
+	recordUserOperation(ctx, r.profileDal, "role.set_user_role", "user", req.UserId, map[string]any{
+		"oldRoleId": targetUser.RoleID,
+		"newRoleId": req.RoleId,
+	})
 	return &role.SetUserRoleRes{
 		Code:    0,
 		Message: "设置成功",

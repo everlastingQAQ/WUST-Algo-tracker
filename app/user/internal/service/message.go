@@ -4,7 +4,6 @@ import (
 	"context"
 	"strings"
 
-	"cwxu-algo/app/common/permission"
 	"cwxu-algo/app/common/utils/auth"
 	"cwxu-algo/app/user/internal/data/dal"
 
@@ -300,7 +299,7 @@ func (s *MessageService) Broadcast(ctx context.Context, req *BroadcastMessageReq
 	if err != nil {
 		return nil, errors.Forbidden("权限不足", "用户不存在或已被禁用")
 	}
-	if sender.RoleID != permission.RoleAdmin && sender.RoleID != permission.RoleCoach {
+	if !canBroadcastMessage(sender.RoleID) {
 		return nil, errors.Forbidden("权限不足", "仅管理员或教练可以群发消息")
 	}
 	content, contentErr := normalizeMessageContent(req.Content)
@@ -322,5 +321,8 @@ func (s *MessageService) Broadcast(ctx context.Context, req *BroadcastMessageReq
 		}
 		sent++
 	}
+	recordUserOperation(ctx, s.profileDal, "message.broadcast", "message", 0, map[string]any{
+		"sent": sent,
+	})
 	return &BroadcastMessageReply{Success: true, Message: "群发成功", Count: sent}, nil
 }

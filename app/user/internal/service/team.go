@@ -144,6 +144,10 @@ func (g *GroupService) CreateTeam(ctx context.Context, req *TeamCreateRequest) (
 	if err != nil {
 		return nil, errors.BadRequest("创建失败", err.Error())
 	}
+	recordUserOperation(ctx, g.groupDal, "team.create", "team", int64(created.ID), map[string]any{
+		"name":      req.Name,
+		"hasAvatar": req.Avatar != "",
+	})
 	return &TeamCreateReply{
 		Success:  true,
 		Message:  "团队创建成功",
@@ -169,6 +173,10 @@ func (g *GroupService) UpdateTeam(ctx context.Context, req *TeamUpdateRequest) (
 	if err := g.groupDal.UpdateTeam(ctx, int64(current.UserID), req.Id, req.Name, req.Avatar, req.Describe); err != nil {
 		return nil, errors.BadRequest("更新失败", err.Error())
 	}
+	recordUserOperation(ctx, g.groupDal, "team.update", "team", req.Id, map[string]any{
+		"name":      req.Name,
+		"hasAvatar": req.Avatar != "",
+	})
 	return &TeamSuccessReply{Success: true, Message: "团队资料已更新"}, nil
 }
 
@@ -184,6 +192,9 @@ func (g *GroupService) InviteTeamMember(ctx context.Context, req *TeamInviteRequ
 	if err != nil {
 		return nil, errors.BadRequest("邀请失败", err.Error())
 	}
+	recordUserOperation(ctx, g.groupDal, "team.invite", "user", req.InviteeId, map[string]any{
+		"inviteId": invite.ID,
+	})
 	return &TeamInviteReply{Success: true, Message: "邀请已发送", InviteId: invite.ID}, nil
 }
 
@@ -198,6 +209,7 @@ func (g *GroupService) RemoveTeamMember(ctx context.Context, req *TeamRemoveMemb
 	if err := g.groupDal.RemoveTeamMember(ctx, int64(current.UserID), req.UserId); err != nil {
 		return nil, errors.BadRequest("移除失败", err.Error())
 	}
+	recordUserOperation(ctx, g.groupDal, "team.remove_member", "user", req.UserId, nil)
 	return &TeamSuccessReply{Success: true, Message: "成员已移出团队"}, nil
 }
 
@@ -212,6 +224,7 @@ func (g *GroupService) TransferTeamOwner(ctx context.Context, req *TeamTransferO
 	if err := g.groupDal.TransferTeamOwner(ctx, int64(current.UserID), req.UserId); err != nil {
 		return nil, errors.BadRequest("转移失败", err.Error())
 	}
+	recordUserOperation(ctx, g.groupDal, "team.transfer_owner", "user", req.UserId, nil)
 	return &TeamSuccessReply{Success: true, Message: "队长已转移"}, nil
 }
 
@@ -223,6 +236,7 @@ func (g *GroupService) LeaveTeam(ctx context.Context) (*TeamSuccessReply, error)
 	if err := g.groupDal.LeaveTeam(ctx, int64(current.UserID)); err != nil {
 		return nil, errors.BadRequest("退出失败", err.Error())
 	}
+	recordUserOperation(ctx, g.groupDal, "team.leave", "user", int64(current.UserID), nil)
 	return &TeamSuccessReply{Success: true, Message: "已退出团队"}, nil
 }
 
@@ -234,6 +248,7 @@ func (g *GroupService) DisbandTeam(ctx context.Context) (*TeamSuccessReply, erro
 	if err := g.groupDal.DisbandTeam(ctx, int64(current.UserID)); err != nil {
 		return nil, errors.BadRequest("解散失败", err.Error())
 	}
+	recordUserOperation(ctx, g.groupDal, "team.disband", "user", int64(current.UserID), nil)
 	return &TeamSuccessReply{Success: true, Message: "团队已解散"}, nil
 }
 

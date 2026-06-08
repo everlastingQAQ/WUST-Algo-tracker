@@ -52,6 +52,7 @@ func migrateModels(db *gorm.DB) {
 		&model.Bulletin{},
 		&model.SpiderSyncStatus{},
 		&model.SpiderRefreshJob{},
+		&model.OperationLog{},
 	)
 	if err != nil {
 		panic("数据库：数据库自动合并失败")

@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"cwxu-algo/app/common/permission"
 	"cwxu-algo/app/common/utils/auth"
 	"cwxu-algo/app/core_data/internal/data/model"
 	"fmt"
@@ -493,7 +492,7 @@ func (s *StatisticService) ClearCache(ctx context.Context, userId int64) (*Cache
 		userId = -1
 	}
 	current := auth.GetCurrentUser(ctx)
-	if current == nil || (current.RoleID != permission.RoleAdmin && current.RoleID != permission.RoleCoach) {
+	if current == nil || !canManageCoreOps(current.RoleID) {
 		return nil, errors.Forbidden("权限错误", "无权清理统计缓存")
 	}
 	deleted := int64(0)
@@ -518,6 +517,9 @@ func (s *StatisticService) ClearCache(ctx context.Context, userId int64) (*Cache
 			deleted += n
 		}
 	}
+	recordCoreOperation(ctx, s.data.DB, "statistic.clear_cache", "user", userId, map[string]any{
+		"deletedKeys": deleted,
+	})
 	return &CacheClearResponse{
 		Code:        0,
 		Message:     "统计缓存已清理",

@@ -48,6 +48,9 @@ func (g *GroupService) Create(ctx context.Context, request *group.CreateRequest)
 	if err != nil {
 		return nil, errors.InternalServer("创建失败", err.Error())
 	}
+	recordUserOperation(ctx, g.groupDal, "group.create", "group", id, map[string]any{
+		"name": request.Name,
+	})
 	return &group.CreateReply{
 		Id:      id,
 		Message: "创建成功",
@@ -65,6 +68,7 @@ func (g *GroupService) Delete(ctx context.Context, request *group.DeleteRequest)
 	if err != nil {
 		return nil, errors.InternalServer("删除失败", err.Error())
 	}
+	recordUserOperation(ctx, g.groupDal, "group.delete", "group", request.Id, nil)
 	return &group.DeleteReply{Success: true}, nil
 }
 
@@ -181,6 +185,9 @@ func (g *GroupService) Update(ctx context.Context, request *group.UpdateRequest)
 	if err != nil {
 		return nil, errors.InternalServer("更新失败", err.Error())
 	}
+	recordUserOperation(ctx, g.groupDal, "group.update", "group", request.Id, map[string]any{
+		"name": request.Name,
+	})
 	return &group.UpdateReply{Success: true}, nil
 }
 

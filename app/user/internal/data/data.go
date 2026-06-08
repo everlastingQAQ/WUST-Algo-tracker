@@ -43,6 +43,7 @@ func migrateModels(db *gorm.DB) {
 		&model.DirectMessageThread{},
 		&model.DirectMessage{},
 		&model.SystemConfig{},
+		&model.OperationLog{},
 	)
 	if err != nil {
 		panic("数据库：数据库自动合并失败")
