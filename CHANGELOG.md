@@ -11,6 +11,7 @@
 - 新增用户服务操作日志查询接口 `/v1/user/system/operation-logs`。
 - 新增核心数据服务操作日志查询接口 `/v1/core/operation-logs`。
 - 新增 `feature_snapshots` 表和 `/v1/core/snapshot` 读写接口，支持训练周报和成就快照。
+- 新增全站成就快照接口 `/v1/core/achievement/global-snapshot`，后端聚合成就解锁比例和站内百分位上下文。
 - 统计口径说明补充平台明细、重爬队列和大型账号分批写入的差异原因。
 - 抓取审计说明细化 Codeforces、洛谷、牛客、QOJ、AtCoder 与 OJ 主页统计不一致的常见原因。
 

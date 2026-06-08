@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	stderrors "errors"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -160,9 +161,25 @@ type SaveFeatureSnapshotRequest struct {
 	Payload    json.RawMessage `json:"payload"`
 }
 
+type AchievementGlobalRate struct {
+	Unlocked int64   `json:"unlocked"`
+	Total    int64   `json:"total"`
+	Rate     float64 `json:"rate"`
+}
+
+type AchievementGlobalSnapshot struct {
+	Code             int64                            `json:"code"`
+	Message          string                           `json:"message"`
+	Rates            map[string]AchievementGlobalRate `json:"rates"`
+	NightPercentiles map[int64]float64                `json:"nightPercentiles"`
+	SiteContexts     map[int64]map[string]any         `json:"siteContexts"`
+	GeneratedAt      int64                            `json:"generatedAt"`
+}
+
 const statisticAcSQL = "(status ILIKE '%AC%' OR status ILIKE '%正确%' OR status ILIKE '%OK%')"
 const statisticProblemKeySQL = "platform || '|' || COALESCE(NULLIF(BTRIM(problem), ''), submit_id)"
 const statisticStaleAfter = 24 * time.Hour
+const achievementGlobalSnapshotTTL = 30 * time.Minute
 
 func (s *StatisticService) Explanation() StatisticExplanation {
 	return StatisticExplanation{
@@ -626,6 +643,323 @@ func (s *StatisticService) OperationLogs(ctx context.Context, page int64, pageSi
 		})
 	}
 	return &OperationLogResponse{Code: 0, Message: "获取操作日志成功", Data: items, Total: total}, nil
+}
+
+type achievementSnapshotPayload struct {
+	Achievements []struct {
+		Key      string `json:"key"`
+		Unlocked bool   `json:"unlocked"`
+	} `json:"achievements"`
+}
+
+type achievementUserMetric struct {
+	UserID         int64
+	TotalSubmit    int64
+	AcceptedSubmit int64
+	NightAcCount   int64
+	TodaySubmit    int64
+	TodayAc        int64
+	MaxDailyWa     int64
+	Hourly         [24]float64
+}
+
+func achievementPercentile(values []float64, value float64) float64 {
+	if len(values) == 0 {
+		return 0
+	}
+	less := 0
+	for _, item := range values {
+		if item < value {
+			less++
+		}
+	}
+	return (float64(less) / float64(len(values))) * 100
+}
+
+func achievementMedian(values []float64) float64 {
+	if len(values) == 0 {
+		return 0
+	}
+	items := append([]float64(nil), values...)
+	for i := 1; i < len(items); i++ {
+		current := items[i]
+		j := i - 1
+		for j >= 0 && items[j] > current {
+			items[j+1] = items[j]
+			j--
+		}
+		items[j+1] = current
+	}
+	middle := len(items) / 2
+	if len(items)%2 == 1 {
+		return items[middle]
+	}
+	return (items[middle-1] + items[middle]) / 2
+}
+
+func achievementDistributionDistance(left [24]float64, right [24]float64) float64 {
+	var sum float64
+	for i := 0; i < 24; i++ {
+		sum += math.Abs(left[i] - right[i])
+	}
+	return sum
+}
+
+func (s *StatisticService) achievementUserMetrics() (map[int64]*achievementUserMetric, error) {
+	type metricRow struct {
+		UserID         int64
+		TotalSubmit    int64
+		AcceptedSubmit int64
+		NightAcCount   int64
+		TodaySubmit    int64
+		TodayAc        int64
+	}
+	var rows []metricRow
+	if err := s.data.DB.Raw(`
+		SELECT
+			user_id,
+			COUNT(*) AS total_submit,
+			SUM(CASE WHEN ` + statisticAcSQL + ` THEN 1 ELSE 0 END) AS accepted_submit,
+			SUM(CASE WHEN ` + statisticAcSQL + ` AND EXTRACT(HOUR FROM time) >= 0 AND EXTRACT(HOUR FROM time) < 5 THEN 1 ELSE 0 END) AS night_ac_count,
+			SUM(CASE WHEN DATE(time) = CURRENT_DATE THEN 1 ELSE 0 END) AS today_submit,
+			SUM(CASE WHEN DATE(time) = CURRENT_DATE AND ` + statisticAcSQL + ` THEN 1 ELSE 0 END) AS today_ac
+		FROM submit_logs
+		GROUP BY user_id
+	`).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	metrics := make(map[int64]*achievementUserMetric, len(rows))
+	for _, row := range rows {
+		metrics[row.UserID] = &achievementUserMetric{
+			UserID:         row.UserID,
+			TotalSubmit:    row.TotalSubmit,
+			AcceptedSubmit: row.AcceptedSubmit,
+			NightAcCount:   row.NightAcCount,
+			TodaySubmit:    row.TodaySubmit,
+			TodayAc:        row.TodayAc,
+		}
+	}
+
+	type dailyWaRow struct {
+		UserID int64
+		Count  int64
+	}
+	var dailyWaRows []dailyWaRow
+	if err := s.data.DB.Raw(`
+		SELECT user_id, COUNT(*) AS count
+		FROM submit_logs
+		WHERE status ILIKE '%WA%' OR status ILIKE '%Wrong Answer%' OR status ILIKE '%答案错误%'
+		GROUP BY user_id, DATE(time)
+	`).Scan(&dailyWaRows).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range dailyWaRows {
+		if metric := metrics[row.UserID]; metric != nil && row.Count > metric.MaxDailyWa {
+			metric.MaxDailyWa = row.Count
+		}
+	}
+
+	type hourRow struct {
+		UserID int64
+		Hour   int
+		Count  int64
+	}
+	var hourRows []hourRow
+	if err := s.data.DB.Raw(`
+		SELECT user_id, EXTRACT(HOUR FROM time)::int AS hour, COUNT(*) AS count
+		FROM submit_logs
+		GROUP BY user_id, EXTRACT(HOUR FROM time)::int
+	`).Scan(&hourRows).Error; err != nil {
+		return nil, err
+	}
+	hourTotals := map[int64]float64{}
+	for _, row := range hourRows {
+		hourTotals[row.UserID] += float64(row.Count)
+	}
+	for _, row := range hourRows {
+		metric := metrics[row.UserID]
+		total := hourTotals[row.UserID]
+		if metric == nil || total <= 0 || row.Hour < 0 || row.Hour > 23 {
+			continue
+		}
+		metric.Hourly[row.Hour] = float64(row.Count) / total
+	}
+	return metrics, nil
+}
+
+func (s *StatisticService) buildAchievementGlobalSnapshot() (*AchievementGlobalSnapshot, error) {
+	var snapshots []model.FeatureSnapshot
+	if err := s.data.DB.Where("kind = ? AND user_id > 0", "achievement").Find(&snapshots).Error; err != nil {
+		return nil, err
+	}
+	counts := map[string]int64{}
+	total := int64(0)
+	for _, snapshot := range snapshots {
+		var payload achievementSnapshotPayload
+		if err := json.Unmarshal([]byte(snapshot.Payload), &payload); err != nil || len(payload.Achievements) == 0 {
+			continue
+		}
+		total++
+		for _, achievement := range payload.Achievements {
+			if strings.TrimSpace(achievement.Key) == "" || !achievement.Unlocked {
+				continue
+			}
+			counts[achievement.Key]++
+		}
+	}
+	rates := make(map[string]AchievementGlobalRate, len(counts))
+	for key, unlocked := range counts {
+		rate := 0.0
+		if total > 0 {
+			rate = (float64(unlocked) / float64(total)) * 100
+		}
+		rates[key] = AchievementGlobalRate{Unlocked: unlocked, Total: total, Rate: rate}
+	}
+
+	metrics, err := s.achievementUserMetrics()
+	if err != nil {
+		return nil, err
+	}
+	totalSubmits := make([]float64, 0, len(metrics))
+	acceptRates := make([]float64, 0, len(metrics))
+	nightCounts := make([]float64, 0, len(metrics))
+	todayLuckyRates := []float64{}
+	averageHourly := [24]float64{}
+	for _, metric := range metrics {
+		totalSubmits = append(totalSubmits, float64(metric.TotalSubmit))
+		acceptRate := 0.0
+		if metric.TotalSubmit > 0 {
+			acceptRate = (float64(metric.AcceptedSubmit) / float64(metric.TotalSubmit)) * 100
+		}
+		acceptRates = append(acceptRates, acceptRate)
+		nightCounts = append(nightCounts, float64(metric.NightAcCount))
+		if metric.TodaySubmit >= 10 {
+			todayLuckyRates = append(todayLuckyRates, (float64(metric.TodayAc)/float64(metric.TodaySubmit))*100)
+		}
+		for i := 0; i < 24; i++ {
+			averageHourly[i] += metric.Hourly[i] / math.Max(float64(len(metrics)), 1)
+		}
+	}
+	medianSubmit := achievementMedian(totalSubmits)
+	medianAcceptRate := achievementMedian(acceptRates)
+	maxDailyWaLeader := int64(0)
+	todaySubmitLeader := int64(0)
+	for _, metric := range metrics {
+		if metric.MaxDailyWa > maxDailyWaLeader {
+			maxDailyWaLeader = metric.MaxDailyWa
+		}
+		if metric.TodaySubmit > todaySubmitLeader {
+			todaySubmitLeader = metric.TodaySubmit
+		}
+	}
+
+	type minuteOwnerRow struct {
+		UserID int64
+		Minute string
+	}
+	var minuteRows []minuteOwnerRow
+	if err := s.data.DB.Raw(`
+		SELECT user_id, TO_CHAR(DATE_TRUNC('minute', time), 'YYYY-MM-DD HH24:MI') AS minute
+		FROM submit_logs
+		WHERE ` + statisticAcSQL + `
+	`).Scan(&minuteRows).Error; err != nil {
+		return nil, err
+	}
+	minuteOwners := map[string]map[int64]struct{}{}
+	for _, row := range minuteRows {
+		if _, ok := minuteOwners[row.Minute]; !ok {
+			minuteOwners[row.Minute] = map[int64]struct{}{}
+		}
+		minuteOwners[row.Minute][row.UserID] = struct{}{}
+	}
+	uniqueAcMinuteByUser := map[int64]bool{}
+	for _, row := range minuteRows {
+		if len(minuteOwners[row.Minute]) == 1 {
+			uniqueAcMinuteByUser[row.UserID] = true
+		}
+	}
+
+	offPeakScores := make([]float64, 0, len(metrics))
+	offPeakByUser := map[int64]float64{}
+	for _, metric := range metrics {
+		score := achievementDistributionDistance(metric.Hourly, averageHourly)
+		offPeakByUser[metric.UserID] = score
+		offPeakScores = append(offPeakScores, score)
+	}
+
+	nightPercentiles := map[int64]float64{}
+	siteContexts := map[int64]map[string]any{}
+	for _, metric := range metrics {
+		acceptRate := 0.0
+		if metric.TotalSubmit > 0 {
+			acceptRate = (float64(metric.AcceptedSubmit) / float64(metric.TotalSubmit)) * 100
+		}
+		todayAcRate := 0.0
+		if metric.TodaySubmit > 0 {
+			todayAcRate = (float64(metric.TodayAc) / float64(metric.TodaySubmit)) * 100
+		}
+		nightPercentile := achievementPercentile(nightCounts, float64(metric.NightAcCount))
+		nightPercentiles[metric.UserID] = nightPercentile
+		todayAcRatePercentile := 0.0
+		if metric.TodaySubmit >= 10 {
+			todayAcRatePercentile = achievementPercentile(todayLuckyRates, todayAcRate)
+		}
+		siteContexts[metric.UserID] = map[string]any{
+			"totalSubmitPercentile": achievementPercentile(totalSubmits, float64(metric.TotalSubmit)),
+			"acceptRatePercentile":  achievementPercentile(acceptRates, acceptRate),
+			"medianSubmit":          medianSubmit,
+			"medianAcceptRate":      medianAcceptRate,
+			"uniqueAcMinute":        uniqueAcMinuteByUser[metric.UserID],
+			"siteDailyWaLeader":     maxDailyWaLeader >= 20 && metric.MaxDailyWa == maxDailyWaLeader,
+			"todaySubmitLeader":     todaySubmitLeader > 0 && metric.TodaySubmit == todaySubmitLeader,
+			"todaySubmit":           metric.TodaySubmit,
+			"todayAcRatePercentile": todayAcRatePercentile,
+			"offPeakPercentile":     achievementPercentile(offPeakScores, offPeakByUser[metric.UserID]),
+		}
+	}
+	return &AchievementGlobalSnapshot{
+		Code:             0,
+		Message:          "获取全站成就快照成功",
+		Rates:            rates,
+		NightPercentiles: nightPercentiles,
+		SiteContexts:     siteContexts,
+		GeneratedAt:      time.Now().Unix(),
+	}, nil
+}
+
+func (s *StatisticService) GetAchievementGlobalSnapshot(ctx context.Context) (*AchievementGlobalSnapshot, error) {
+	var snapshot model.FeatureSnapshot
+	err := s.data.DB.Where("user_id = ? AND kind = ?", -1, "achievement_global").First(&snapshot).Error
+	if err == nil && time.Since(snapshot.GeneratedAt) < achievementGlobalSnapshotTTL && json.Valid([]byte(snapshot.Payload)) {
+		var payload AchievementGlobalSnapshot
+		if json.Unmarshal([]byte(snapshot.Payload), &payload) == nil {
+			payload.Code = 0
+			payload.Message = "获取全站成就快照成功"
+			return &payload, nil
+		}
+	}
+	if err != nil && !stderrors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+	payload, err := s.buildAchievementGlobalSnapshot()
+	if err != nil {
+		return nil, err
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	record := model.FeatureSnapshot{UserID: -1, Kind: "achievement_global"}
+	if err := s.data.DB.Where("user_id = ? AND kind = ?", -1, "achievement_global").Assign(model.FeatureSnapshot{
+		SourceHash:  fmt.Sprintf("%d", now.Unix()),
+		Payload:     string(raw),
+		GeneratedAt: now,
+	}).FirstOrCreate(&record).Error; err != nil {
+		return nil, err
+	}
+	payload.GeneratedAt = now.Unix()
+	return payload, nil
 }
 
 func normalizeSnapshotKind(kind string) (string, error) {

@@ -34,6 +34,7 @@ func NewWhiteListMatcher() selector.MatchFunc {
 		"/v1/core/statistic/platform-period":                 "",
 		"/v1/core/statistic/explanation":                     "",
 		"/v1/core/statistic/platform-detail":                 "",
+		"/v1/core/achievement/global-snapshot":               "",
 		"/api.core.v1.bulletin.Bulletin/Get":                 "",
 		"/api.core.v1.bulletin.Bulletin/List":                "",
 	}
@@ -126,6 +127,14 @@ func NewHTTPServer(c *conf.Server, logger log.Logger, submitService *service.Sub
 			return
 		}
 		res, err := statisticService.PlatformDetail(r.Context(), userId, r.URL.Query().Get("platform"), r.URL.Query().Get("mode"), page, pageSize)
+		writeHTTPJSON(w, res, err)
+	})
+	srv.HandleFunc("/v1/core/achievement/global-snapshot", func(w nethttp.ResponseWriter, r *nethttp.Request) {
+		if r.Method != nethttp.MethodGet {
+			w.WriteHeader(nethttp.StatusMethodNotAllowed)
+			return
+		}
+		res, err := statisticService.GetAchievementGlobalSnapshot(r.Context())
 		writeHTTPJSON(w, res, err)
 	})
 	srv.HandleFunc("/v1/core/spider/audit", func(w nethttp.ResponseWriter, r *nethttp.Request) {
