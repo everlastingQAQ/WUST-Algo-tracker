@@ -210,6 +210,51 @@ func NewHTTPServer(c *conf.Server, logger log.Logger, submitService *service.Sub
 		}
 		_ = json.NewEncoder(w).Encode(res)
 	})
+	srv.HandleFunc("/v1/core/operation-logs", func(w nethttp.ResponseWriter, r *nethttp.Request) {
+		if r.Method != nethttp.MethodGet {
+			w.WriteHeader(nethttp.StatusMethodNotAllowed)
+			return
+		}
+		page, err := parseIntQuery(r, "page", 1)
+		if err != nil {
+			writeHTTPError(w, nethttp.StatusBadRequest, "page参数错误")
+			return
+		}
+		pageSize, err := parseIntQuery(r, "pageSize", 30)
+		if err != nil {
+			writeHTTPError(w, nethttp.StatusBadRequest, "pageSize参数错误")
+			return
+		}
+		res, err := statisticService.OperationLogs(r.Context(), page, pageSize, r.URL.Query().Get("action"))
+		writeHTTPJSON(w, res, err)
+	})
+	srv.HandleFunc("/v1/core/snapshot", func(w nethttp.ResponseWriter, r *nethttp.Request) {
+		switch r.Method {
+		case nethttp.MethodGet:
+			userId, err := parseIntQuery(r, "userId", 0)
+			if err != nil {
+				writeHTTPError(w, nethttp.StatusBadRequest, "userId参数错误")
+				return
+			}
+			res, err := statisticService.GetFeatureSnapshot(
+				r.Context(),
+				userId,
+				r.URL.Query().Get("kind"),
+				r.URL.Query().Get("sourceHash"),
+			)
+			writeHTTPJSON(w, res, err)
+		case nethttp.MethodPost:
+			var req service.SaveFeatureSnapshotRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				writeHTTPError(w, nethttp.StatusBadRequest, "请求参数错误")
+				return
+			}
+			res, err := statisticService.SaveFeatureSnapshot(r.Context(), req)
+			writeHTTPJSON(w, res, err)
+		default:
+			w.WriteHeader(nethttp.StatusMethodNotAllowed)
+		}
+	})
 	return srv
 }
 

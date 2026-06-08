@@ -99,6 +99,7 @@ const (
 	operationMessageRead       = "/api.user.v1.Message/Read"
 	operationMessageUnread     = "/api.user.v1.Message/UnreadCount"
 	operationMessageBroadcast  = "/api.user.v1.Message/Broadcast"
+	operationSystemLogs        = "/api.user.v1.System/OperationLogs"
 )
 
 func registerSystemHTTPServer(s *http.Server, srv *service.AuthService) {
@@ -122,6 +123,21 @@ func registerSystemHTTPServer(s *http.Server, srv *service.AuthService) {
 		http.SetOperation(ctx, operationSystemInviteCode)
 		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
 			return srv.UpdateRegisterInviteCode(ctx, req.(*service.RegisterInviteCodeRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		return ctx.Result(200, out)
+	})
+	r.GET("/v1/user/system/operation-logs", func(ctx http.Context) error {
+		var in service.UserOperationLogRequest
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, operationSystemLogs)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.OperationLogs(ctx, req.(*service.UserOperationLogRequest))
 		})
 		out, err := h(ctx, &in)
 		if err != nil {

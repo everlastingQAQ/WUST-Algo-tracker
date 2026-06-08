@@ -7,6 +7,7 @@ import (
 	authutil "cwxu-algo/app/common/utils/auth"
 	"cwxu-algo/app/user/internal/data"
 	"cwxu-algo/app/user/internal/data/model"
+	"encoding/json"
 	"errors"
 	"strings"
 	"time"
@@ -24,6 +25,31 @@ const (
 
 type AuthService struct {
 	db *gorm.DB
+}
+
+type UserOperationLogItem struct {
+	ID           uint            `json:"id"`
+	Service      string          `json:"service"`
+	OperatorID   int64           `json:"operatorId"`
+	OperatorRole int             `json:"operatorRole"`
+	Action       string          `json:"action"`
+	TargetType   string          `json:"targetType"`
+	TargetID     int64           `json:"targetId"`
+	Detail       json.RawMessage `json:"detail"`
+	CreatedAt    int64           `json:"createdAt"`
+}
+
+type UserOperationLogRequest struct {
+	Page     int64  `json:"page" form:"page"`
+	PageSize int64  `json:"pageSize" form:"pageSize"`
+	Action   string `json:"action" form:"action"`
+}
+
+type UserOperationLogReply struct {
+	Code    int64                  `json:"code"`
+	Message string                 `json:"message"`
+	Data    []UserOperationLogItem `json:"data"`
+	Total   int64                  `json:"total"`
 }
 
 func NewAuthService(d *data.Data) *AuthService {
@@ -143,6 +169,64 @@ func (s *AuthService) UpdateRegisterInviteCode(ctx context.Context, req *Registe
 		Success:    true,
 		Message:    "邀请码已更新",
 		InviteCode: inviteCode,
+	}, nil
+}
+
+func userOperationDetailJSON(detail string) json.RawMessage {
+	if strings.TrimSpace(detail) == "" {
+		return json.RawMessage("{}")
+	}
+	if json.Valid([]byte(detail)) {
+		return json.RawMessage(detail)
+	}
+	encoded, _ := json.Marshal(map[string]string{"raw": detail})
+	return encoded
+}
+
+func (s *AuthService) OperationLogs(ctx context.Context, req *UserOperationLogRequest) (*UserOperationLogReply, error) {
+	if !authutil.VerifyAdmin(ctx) {
+		return nil, kerrors.Forbidden("权限不足", "只有管理员可以查看操作日志")
+	}
+	page := req.Page
+	pageSize := req.PageSize
+	if page <= 0 {
+		page = 1
+	}
+	if pageSize <= 0 || pageSize > 100 {
+		pageSize = 30
+	}
+	query := s.db.Model(&model.OperationLog{})
+	action := strings.TrimSpace(req.Action)
+	if action != "" {
+		query = query.Where("action = ?", action)
+	}
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, kerrors.InternalServer("查询失败", err.Error())
+	}
+	var rows []model.OperationLog
+	if err := query.Order("created_at DESC").Offset(int((page - 1) * pageSize)).Limit(int(pageSize)).Find(&rows).Error; err != nil {
+		return nil, kerrors.InternalServer("查询失败", err.Error())
+	}
+	items := make([]UserOperationLogItem, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, UserOperationLogItem{
+			ID:           row.ID,
+			Service:      "user",
+			OperatorID:   row.OperatorID,
+			OperatorRole: row.OperatorRole,
+			Action:       row.Action,
+			TargetType:   row.TargetType,
+			TargetID:     row.TargetID,
+			Detail:       userOperationDetailJSON(row.Detail),
+			CreatedAt:    row.CreatedAt.Unix(),
+		})
+	}
+	return &UserOperationLogReply{
+		Code:    0,
+		Message: "获取操作日志成功",
+		Data:    items,
+		Total:   total,
 	}, nil
 }
 

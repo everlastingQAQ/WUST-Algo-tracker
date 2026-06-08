@@ -4,11 +4,14 @@ import (
 	"context"
 	"cwxu-algo/app/common/utils/auth"
 	"cwxu-algo/app/core_data/internal/data/model"
+	"encoding/json"
+	stderrors "errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/go-kratos/kratos/v2/errors"
+	"gorm.io/gorm"
 )
 
 type StatisticExplanation struct {
@@ -119,6 +122,44 @@ type CacheClearResponse struct {
 	DeletedKeys int64  `json:"deletedKeys"`
 }
 
+type OperationLogItem struct {
+	ID           uint            `json:"id"`
+	Service      string          `json:"service"`
+	OperatorID   int64           `json:"operatorId"`
+	OperatorRole int             `json:"operatorRole"`
+	Action       string          `json:"action"`
+	TargetType   string          `json:"targetType"`
+	TargetID     int64           `json:"targetId"`
+	Detail       json.RawMessage `json:"detail"`
+	CreatedAt    int64           `json:"createdAt"`
+}
+
+type OperationLogResponse struct {
+	Code    int64              `json:"code"`
+	Message string             `json:"message"`
+	Data    []OperationLogItem `json:"data"`
+	Total   int64              `json:"total"`
+}
+
+type FeatureSnapshotResponse struct {
+	Code        int64           `json:"code"`
+	Message     string          `json:"message"`
+	UserID      int64           `json:"userId"`
+	Kind        string          `json:"kind"`
+	SourceHash  string          `json:"sourceHash"`
+	Payload     json.RawMessage `json:"payload"`
+	Exists      bool            `json:"exists"`
+	Stale       bool            `json:"stale"`
+	GeneratedAt int64           `json:"generatedAt"`
+}
+
+type SaveFeatureSnapshotRequest struct {
+	UserID     int64           `json:"userId"`
+	Kind       string          `json:"kind"`
+	SourceHash string          `json:"sourceHash"`
+	Payload    json.RawMessage `json:"payload"`
+}
+
 const statisticAcSQL = "(status ILIKE '%AC%' OR status ILIKE '%正确%' OR status ILIKE '%OK%')"
 const statisticProblemKeySQL = "platform || '|' || COALESCE(NULLIF(BTRIM(problem), ''), submit_id)"
 const statisticStaleAfter = 24 * time.Hour
@@ -134,6 +175,8 @@ func (s *StatisticService) Explanation() StatisticExplanation {
 			"洛谷会保留 record/list 中的全部记录，包括 U/T/SP 等题目，因此可能高于洛谷主页公开题库口径。",
 			"Codeforces 基于 user.status API，题目标识包含 contestId/index/name，可能与主页 Problems solved 的内部口径略有差异。",
 			"更新 OJ 数据、重爬队列和缓存刷新过程中，短时间内可能看到数字变化。",
+			"平台明细页可以查看每条提交是否计入 AC、problem key 和去重后的题目列表。",
+			"大型账号会分批写入提交日志，抓取任务未完成前统计可能短暂低于 OJ 主页。",
 		},
 		Generated: time.Now().Unix(),
 	}
@@ -204,9 +247,15 @@ func auditNotes(platform string, audit SpiderAuditItem) []string {
 	}
 	switch strings.ToLower(platform) {
 	case "luogu":
-		notes = append(notes, "洛谷主页通过数和本站可能不同：本站以抓取到的提交日志为准。")
+		notes = append(notes, "洛谷主页通过数和本站可能不同：主页可能隐藏部分题库/远程题/不可见记录，本站以抓取到的提交日志为准。")
 	case "codeforces":
-		notes = append(notes, "Codeforces 大账号可能包含海量历史提交；本站以 API 返回并成功写入的记录为准。")
+		notes = append(notes, "Codeforces 主页 solved 口径可能包含 problemset/gym/历史可见性差异；本站以 user.status API 返回并成功写入的记录为准。")
+	case "nowcoder":
+		notes = append(notes, "牛客主页不同栏目可能分别展示练习、比赛或题单数据；本站统一按提交日志题目标识去重。")
+	case "qoj":
+		notes = append(notes, "QOJ 部分题目来源和比赛可见性会影响主页展示；本站保留抓取到的提交记录。")
+	case "atcoder":
+		notes = append(notes, "AtCoder 以提交记录题目标识去重，历史 contest 归档和主页统计展示可能存在时间差。")
 	}
 	return notes
 }
@@ -525,5 +574,157 @@ func (s *StatisticService) ClearCache(ctx context.Context, userId int64) (*Cache
 		Message:     "统计缓存已清理",
 		UserID:      userId,
 		DeletedKeys: deleted,
+	}, nil
+}
+
+func operationDetailJSON(detail string) json.RawMessage {
+	if strings.TrimSpace(detail) == "" {
+		return json.RawMessage("{}")
+	}
+	if json.Valid([]byte(detail)) {
+		return json.RawMessage(detail)
+	}
+	encoded, _ := json.Marshal(map[string]string{"raw": detail})
+	return encoded
+}
+
+func (s *StatisticService) OperationLogs(ctx context.Context, page int64, pageSize int64, action string) (*OperationLogResponse, error) {
+	current := auth.GetCurrentUser(ctx)
+	if current == nil || !canManageCoreOps(current.RoleID) {
+		return nil, errors.Forbidden("权限错误", "无权查看操作日志")
+	}
+	if page <= 0 {
+		page = 1
+	}
+	if pageSize <= 0 || pageSize > 100 {
+		pageSize = 30
+	}
+	query := s.data.DB.Model(&model.OperationLog{})
+	if strings.TrimSpace(action) != "" {
+		query = query.Where("action = ?", strings.TrimSpace(action))
+	}
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, err
+	}
+	var rows []model.OperationLog
+	if err := query.Order("created_at DESC").Offset(int((page - 1) * pageSize)).Limit(int(pageSize)).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	items := make([]OperationLogItem, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, OperationLogItem{
+			ID:           row.ID,
+			Service:      "core-data",
+			OperatorID:   row.OperatorID,
+			OperatorRole: row.OperatorRole,
+			Action:       row.Action,
+			TargetType:   row.TargetType,
+			TargetID:     row.TargetID,
+			Detail:       operationDetailJSON(row.Detail),
+			CreatedAt:    row.CreatedAt.Unix(),
+		})
+	}
+	return &OperationLogResponse{Code: 0, Message: "获取操作日志成功", Data: items, Total: total}, nil
+}
+
+func normalizeSnapshotKind(kind string) (string, error) {
+	kind = strings.TrimSpace(kind)
+	switch kind {
+	case "weekly_report", "achievement":
+		return kind, nil
+	default:
+		return "", errors.BadRequest("参数错误", "不支持的快照类型")
+	}
+}
+
+func (s *StatisticService) GetFeatureSnapshot(ctx context.Context, userId int64, kind string, sourceHash string) (*FeatureSnapshotResponse, error) {
+	if userId <= 0 {
+		return nil, errors.BadRequest("参数错误", "userId不能为空")
+	}
+	normalizedKind, err := normalizeSnapshotKind(kind)
+	if err != nil {
+		return nil, err
+	}
+	current := auth.GetCurrentUser(ctx)
+	if current == nil || !canOperateUserDetail(int64(current.UserID), current.RoleID, userId) {
+		return nil, errors.Forbidden("权限错误", "无权查看该用户快照")
+	}
+	var snapshot model.FeatureSnapshot
+	err = s.data.DB.Where("user_id = ? AND kind = ?", userId, normalizedKind).First(&snapshot).Error
+	if stderrors.Is(err, gorm.ErrRecordNotFound) {
+		return &FeatureSnapshotResponse{
+			Code:    0,
+			Message: "暂无快照",
+			UserID:  userId,
+			Kind:    normalizedKind,
+			Payload: json.RawMessage("{}"),
+			Exists:  false,
+			Stale:   true,
+		}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	stale := sourceHash != "" && snapshot.SourceHash != sourceHash
+	payload := json.RawMessage(snapshot.Payload)
+	if !json.Valid(payload) {
+		payload = json.RawMessage("{}")
+	}
+	return &FeatureSnapshotResponse{
+		Code:        0,
+		Message:     "获取快照成功",
+		UserID:      userId,
+		Kind:        normalizedKind,
+		SourceHash:  snapshot.SourceHash,
+		Payload:     payload,
+		Exists:      true,
+		Stale:       stale,
+		GeneratedAt: snapshot.GeneratedAt.Unix(),
+	}, nil
+}
+
+func (s *StatisticService) SaveFeatureSnapshot(ctx context.Context, req SaveFeatureSnapshotRequest) (*FeatureSnapshotResponse, error) {
+	if req.UserID <= 0 {
+		return nil, errors.BadRequest("参数错误", "userId不能为空")
+	}
+	normalizedKind, err := normalizeSnapshotKind(req.Kind)
+	if err != nil {
+		return nil, err
+	}
+	current := auth.GetCurrentUser(ctx)
+	if current == nil || !canOperateUserDetail(int64(current.UserID), current.RoleID, req.UserID) {
+		return nil, errors.Forbidden("权限错误", "无权保存该用户快照")
+	}
+	payload := strings.TrimSpace(string(req.Payload))
+	if payload == "" || payload == "null" {
+		payload = "{}"
+	}
+	if !json.Valid([]byte(payload)) {
+		return nil, errors.BadRequest("参数错误", "payload必须是JSON")
+	}
+	now := time.Now()
+	snapshot := model.FeatureSnapshot{UserID: req.UserID, Kind: normalizedKind}
+	if err := s.data.DB.Where("user_id = ? AND kind = ?", req.UserID, normalizedKind).Assign(model.FeatureSnapshot{
+		SourceHash:  strings.TrimSpace(req.SourceHash),
+		Payload:     payload,
+		GeneratedAt: now,
+	}).FirstOrCreate(&snapshot).Error; err != nil {
+		return nil, err
+	}
+	recordCoreOperation(ctx, s.data.DB, "snapshot.save", "user", req.UserID, map[string]any{
+		"kind":       normalizedKind,
+		"sourceHash": req.SourceHash,
+	})
+	return &FeatureSnapshotResponse{
+		Code:        0,
+		Message:     "保存快照成功",
+		UserID:      req.UserID,
+		Kind:        normalizedKind,
+		SourceHash:  req.SourceHash,
+		Payload:     json.RawMessage(payload),
+		Exists:      true,
+		Stale:       false,
+		GeneratedAt: now.Unix(),
 	}, nil
 }
