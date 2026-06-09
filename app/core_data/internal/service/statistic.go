@@ -6,6 +6,7 @@ import (
 	"cwxu-algo/api/core/v1/statistic"
 	"cwxu-algo/app/core_data/internal/biz/service"
 	"cwxu-algo/app/core_data/internal/data"
+	coreDal "cwxu-algo/app/core_data/internal/data/dal"
 )
 
 // StatisticService 统计服务
@@ -19,6 +20,27 @@ type PlatformPeriodItem struct {
 	Platform string                 `json:"platform"`
 	Submit   *statistic.SubmitCount `json:"submit"`
 	Ac       *statistic.AcCount     `json:"ac"`
+}
+
+type TeamPeriodItem struct {
+	UserID  int64                  `json:"userId"`
+	Submit  *statistic.SubmitCount `json:"submit"`
+	Ac      *statistic.AcCount     `json:"ac"`
+	WaTotal int64                  `json:"waTotal"`
+}
+
+type TeamPeriodSummary struct {
+	UserID  int64                  `json:"userId"`
+	Submit  *statistic.SubmitCount `json:"submit"`
+	Ac      *statistic.AcCount     `json:"ac"`
+	WaTotal int64                  `json:"waTotal"`
+}
+
+type TeamPeriodResponse struct {
+	Code    int64             `json:"code"`
+	Message string            `json:"message"`
+	Members []TeamPeriodItem  `json:"members"`
+	Total   TeamPeriodSummary `json:"total"`
 }
 
 // NewStatistic 创建统计服务
@@ -74,4 +96,90 @@ func (s *StatisticService) PlatformPeriod(ctx context.Context, userId int64) ([]
 	}
 
 	return result, nil
+}
+
+func (s *StatisticService) TeamPeriod(ctx context.Context, userIds []int64) (*TeamPeriodResponse, error) {
+	data, err := s.uc.TeamPeriodCount(ctx, userIds)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]TeamPeriodItem, 0, len(data))
+	totalSubmit := &statistic.SubmitCount{}
+	totalAc := &statistic.AcCount{}
+	var totalWa int64
+
+	for _, item := range data {
+		submit := toSubmitCount(item.Submit)
+		ac := toAcCount(item.Ac)
+		result = append(result, TeamPeriodItem{
+			UserID:  item.UserID,
+			Submit:  submit,
+			Ac:      ac,
+			WaTotal: item.WaTotal,
+		})
+		addSubmitCount(totalSubmit, submit)
+		addAcCount(totalAc, ac)
+		totalWa += item.WaTotal
+	}
+
+	return &TeamPeriodResponse{
+		Code:    0,
+		Message: "获取团队统计成功",
+		Members: result,
+		Total: TeamPeriodSummary{
+			UserID:  0,
+			Submit:  totalSubmit,
+			Ac:      totalAc,
+			WaTotal: totalWa,
+		},
+	}, nil
+}
+
+func toSubmitCount(item coreDal.PeriodSubmitCount) *statistic.SubmitCount {
+	return &statistic.SubmitCount{
+		Today:     item.Today,
+		ThisWeek:  item.ThisWeek,
+		LastWeek:  item.LastWeek,
+		ThisMonth: item.ThisMonth,
+		LastMonth: item.LastMonth,
+		ThisYear:  item.ThisYear,
+		LastYear:  item.LastYear,
+		Total:     item.Total,
+	}
+}
+
+func toAcCount(item coreDal.PeriodAcCount) *statistic.AcCount {
+	return &statistic.AcCount{
+		Today:     item.Today,
+		ThisWeek:  item.ThisWeek,
+		LastWeek:  item.LastWeek,
+		ThisMonth: item.ThisMonth,
+		LastMonth: item.LastMonth,
+		ThisYear:  item.ThisYear,
+		LastYear:  item.LastYear,
+		Total:     item.Total,
+	}
+}
+
+func addSubmitCount(total *statistic.SubmitCount, item *statistic.SubmitCount) {
+	total.Today += item.Today
+	total.ThisWeek += item.ThisWeek
+	total.LastWeek += item.LastWeek
+	total.ThisMonth += item.ThisMonth
+	total.LastMonth += item.LastMonth
+	total.ThisYear += item.ThisYear
+	total.LastYear += item.LastYear
+	total.Total += item.Total
+}
+
+func addAcCount(total *statistic.AcCount, item *statistic.AcCount) {
+	total.Today += item.Today
+	total.ThisWeek += item.ThisWeek
+	total.LastWeek += item.LastWeek
+	total.ThisMonth += item.ThisMonth
+	total.LastMonth += item.LastMonth
+	total.ThisYear += item.ThisYear
+	total.LastYear += item.LastYear
+	total.Total += item.Total
 }

@@ -91,12 +91,19 @@ type PlatformPeriodCount struct {
 	Ac       PeriodAcCount
 }
 
+type TeamMemberPeriodCount struct {
+	UserID  int64
+	Submit  PeriodSubmitCount
+	Ac      PeriodAcCount
+	WaTotal int64
+}
+
 const acCondition = "(status ILIKE '%AC%' OR status ILIKE '%正确%' OR status ILIKE '%OK%')"
 const acDistinctKey = "user_id::text || '|' || platform || '|' || COALESCE(NULLIF(BTRIM(problem), ''), submit_id)"
 
 // GetPeriodCount 获取时间段统计数据
 func (d *StatisticDal) GetPeriodCount(userId int64) (PeriodSubmitCount, PeriodAcCount, error) {
-	now := time.Now()
+	now := statisticNow()
 
 	// 日期范围计算
 	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
@@ -135,7 +142,7 @@ func (d *StatisticDal) GetPeriodCount(userId int64) (PeriodSubmitCount, PeriodAc
 }
 
 func (d *StatisticDal) GetPlatformPeriodCount(userId int64, platforms []string) ([]PlatformPeriodCount, error) {
-	now := time.Now()
+	now := statisticNow()
 	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	thisWeekStart := getWeekStart(now)
 	lastWeekStart := thisWeekStart.Add(-7 * 24 * time.Hour)
@@ -243,6 +250,117 @@ func (d *StatisticDal) GetPlatformPeriodCount(userId int64, platforms []string) 
 	return result, nil
 }
 
+func (d *StatisticDal) GetTeamPeriodCount(userIds []int64) ([]TeamMemberPeriodCount, error) {
+	now := statisticNow()
+	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	thisWeekStart := getWeekStart(now)
+	lastWeekStart := thisWeekStart.Add(-7 * 24 * time.Hour)
+	thisMonthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
+	lastMonthStart := thisMonthStart.AddDate(0, -1, 0)
+	thisYearStart := time.Date(now.Year(), 1, 1, 0, 0, 0, 0, now.Location())
+	lastYearStart := thisYearStart.AddDate(-1, 0, 0)
+
+	type teamPeriodRow struct {
+		UserID          int64
+		SubmitToday     int64
+		SubmitThisWeek  int64
+		SubmitLastWeek  int64
+		SubmitThisMonth int64
+		SubmitLastMonth int64
+		SubmitThisYear  int64
+		SubmitLastYear  int64
+		SubmitTotal     int64
+		AcToday         int64
+		AcThisWeek      int64
+		AcLastWeek      int64
+		AcThisMonth     int64
+		AcLastMonth     int64
+		AcThisYear      int64
+		AcLastYear      int64
+		AcTotal         int64
+		WaTotal         int64
+	}
+
+	var rows []teamPeriodRow
+	err := d.db.Table("submit_logs").
+		Where("user_id IN ?", userIds).
+		Select(`
+			user_id,
+			COUNT(*) FILTER (WHERE time >= ? AND time < ?) AS submit_today,
+			COUNT(*) FILTER (WHERE time >= ? AND time < ?) AS submit_this_week,
+			COUNT(*) FILTER (WHERE time >= ? AND time < ?) AS submit_last_week,
+			COUNT(*) FILTER (WHERE time >= ? AND time < ?) AS submit_this_month,
+			COUNT(*) FILTER (WHERE time >= ? AND time < ?) AS submit_last_month,
+			COUNT(*) FILTER (WHERE time >= ? AND time < ?) AS submit_this_year,
+			COUNT(*) FILTER (WHERE time >= ? AND time < ?) AS submit_last_year,
+			COUNT(*) AS submit_total,
+			COUNT(DISTINCT CASE WHEN `+acCondition+` AND time >= ? AND time < ? THEN `+acDistinctKey+` END) AS ac_today,
+			COUNT(DISTINCT CASE WHEN `+acCondition+` AND time >= ? AND time < ? THEN `+acDistinctKey+` END) AS ac_this_week,
+			COUNT(DISTINCT CASE WHEN `+acCondition+` AND time >= ? AND time < ? THEN `+acDistinctKey+` END) AS ac_last_week,
+			COUNT(DISTINCT CASE WHEN `+acCondition+` AND time >= ? AND time < ? THEN `+acDistinctKey+` END) AS ac_this_month,
+			COUNT(DISTINCT CASE WHEN `+acCondition+` AND time >= ? AND time < ? THEN `+acDistinctKey+` END) AS ac_last_month,
+			COUNT(DISTINCT CASE WHEN `+acCondition+` AND time >= ? AND time < ? THEN `+acDistinctKey+` END) AS ac_this_year,
+			COUNT(DISTINCT CASE WHEN `+acCondition+` AND time >= ? AND time < ? THEN `+acDistinctKey+` END) AS ac_last_year,
+			COUNT(DISTINCT CASE WHEN `+acCondition+` THEN `+acDistinctKey+` END) AS ac_total,
+			COUNT(*) FILTER (WHERE status ILIKE '%WA%' OR status ILIKE '%Wrong Answer%' OR status ILIKE '%答案错误%') AS wa_total
+		`,
+			todayStart, now,
+			thisWeekStart, now,
+			lastWeekStart, thisWeekStart,
+			thisMonthStart, now,
+			lastMonthStart, thisMonthStart,
+			thisYearStart, now,
+			lastYearStart, thisYearStart,
+			todayStart, now,
+			thisWeekStart, now,
+			lastWeekStart, thisWeekStart,
+			thisMonthStart, now,
+			lastMonthStart, thisMonthStart,
+			thisYearStart, now,
+			lastYearStart, thisYearStart,
+		).
+		Group("user_id").
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+
+	rowByUserID := make(map[int64]teamPeriodRow, len(rows))
+	for _, row := range rows {
+		rowByUserID[row.UserID] = row
+	}
+
+	result := make([]TeamMemberPeriodCount, 0, len(userIds))
+	for _, userId := range userIds {
+		row := rowByUserID[userId]
+		result = append(result, TeamMemberPeriodCount{
+			UserID: userId,
+			Submit: PeriodSubmitCount{
+				Today:     row.SubmitToday,
+				ThisWeek:  row.SubmitThisWeek,
+				LastWeek:  row.SubmitLastWeek,
+				ThisMonth: row.SubmitThisMonth,
+				LastMonth: row.SubmitLastMonth,
+				ThisYear:  row.SubmitThisYear,
+				LastYear:  row.SubmitLastYear,
+				Total:     row.SubmitTotal,
+			},
+			Ac: PeriodAcCount{
+				Today:     row.AcToday,
+				ThisWeek:  row.AcThisWeek,
+				LastWeek:  row.AcLastWeek,
+				ThisMonth: row.AcThisMonth,
+				LastMonth: row.AcLastMonth,
+				ThisYear:  row.AcThisYear,
+				LastYear:  row.AcLastYear,
+				Total:     row.AcTotal,
+			},
+			WaTotal: row.WaTotal,
+		})
+	}
+	return result, nil
+}
+
 // RankItem 排行榜项
 type RankItem struct {
 	Rank   int64
@@ -253,7 +371,7 @@ type RankItem struct {
 
 // GetRank 获取排行榜数据
 func (d *StatisticDal) GetRank(ctx context.Context, userId int64, timeType, scoreType string, groupId int64, page, pageSize int64) ([]RankItem, int64, error) {
-	now := time.Now()
+	now := statisticNow()
 	var startTime time.Time
 	var endTime = now
 
@@ -268,7 +386,7 @@ func (d *StatisticDal) GetRank(ctx context.Context, userId int64, timeType, scor
 	default:
 		// 默认全部时间
 		startTime = time.Time{}
-		endTime = time.Now().Add(100 * 365 * 24 * time.Hour)
+		endTime = statisticNow().Add(100 * 365 * 24 * time.Hour)
 	}
 
 	type RankQueryResult struct {
@@ -442,5 +560,14 @@ func getWeekStart(t time.Time) time.Time {
 		weekday = 7
 	}
 	days := int(weekday - time.Monday)
-	return t.AddDate(0, 0, -days).Truncate(24 * time.Hour)
+	start := t.AddDate(0, 0, -days)
+	return time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, start.Location())
+}
+
+func statisticNow() time.Time {
+	loc, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		loc = time.FixedZone("Asia/Shanghai", 8*60*60)
+	}
+	return time.Now().In(loc)
 }

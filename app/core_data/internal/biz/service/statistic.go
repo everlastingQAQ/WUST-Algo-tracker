@@ -126,3 +126,14 @@ func (uc *StatisticUseCase) PlatformPeriodCount(ctx context.Context, userId int6
 
 	return *result, nil
 }
+
+func (uc *StatisticUseCase) TeamPeriodCount(ctx context.Context, userIds []int64) ([]dal.TeamMemberPeriodCount, error) {
+	if len(userIds) == 0 {
+		return []dal.TeamMemberPeriodCount{}, nil
+	}
+	result, err := uc.dal.GetTeamPeriodCount(userIds)
+	if err != nil {
+		return nil, errors.InternalServer("内部错误", err.Error())
+	}
+	return result, nil
+}

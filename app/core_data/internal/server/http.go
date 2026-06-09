@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	nethttp "net/http"
 	"strconv"
+	"strings"
 
 	kerrors "github.com/go-kratos/kratos/v2/errors"
 	"github.com/go-kratos/kratos/v2/log"
@@ -32,6 +33,7 @@ func NewWhiteListMatcher() selector.MatchFunc {
 		"/api.core.v1.statistic.Statistic/Heatmap":           "",
 		"/api.core.v1.statistic.Statistic/PeriodCount":       "",
 		"/v1/core/statistic/platform-period":                 "",
+		"/v1/core/statistic/team-period":                     "",
 		"/v1/core/statistic/explanation":                     "",
 		"/v1/core/statistic/platform-detail":                 "",
 		"/v1/core/achievement/global-snapshot":               "",
@@ -97,6 +99,23 @@ func NewHTTPServer(c *conf.Server, logger log.Logger, submitService *service.Sub
 			return
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": data})
+	})
+	srv.HandleFunc("/v1/core/statistic/team-period", func(w nethttp.ResponseWriter, r *nethttp.Request) {
+		if r.Method != nethttp.MethodGet {
+			w.WriteHeader(nethttp.StatusMethodNotAllowed)
+			return
+		}
+		userIds, err := parseIntCSVQuery(r, "userIds")
+		if err != nil || len(userIds) == 0 {
+			writeHTTPError(w, nethttp.StatusBadRequest, "userIds参数错误")
+			return
+		}
+		if len(userIds) > 100 {
+			writeHTTPError(w, nethttp.StatusBadRequest, "团队成员数量过多")
+			return
+		}
+		res, err := statisticService.TeamPeriod(r.Context(), userIds)
+		writeHTTPJSON(w, res, err)
 	})
 	srv.HandleFunc("/v1/core/statistic/explanation", func(w nethttp.ResponseWriter, r *nethttp.Request) {
 		if r.Method != nethttp.MethodGet {
@@ -273,6 +292,31 @@ func parseIntQuery(r *nethttp.Request, key string, fallback int64) (int64, error
 		return fallback, nil
 	}
 	return strconv.ParseInt(raw, 10, 64)
+}
+
+func parseIntCSVQuery(r *nethttp.Request, key string) ([]int64, error) {
+	raw := strings.TrimSpace(r.URL.Query().Get(key))
+	if raw == "" {
+		return nil, nil
+	}
+	seen := make(map[int64]bool)
+	result := make([]int64, 0)
+	for _, part := range strings.Split(raw, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		value, err := strconv.ParseInt(part, 10, 64)
+		if err != nil || value <= 0 {
+			return nil, err
+		}
+		if seen[value] {
+			continue
+		}
+		seen[value] = true
+		result = append(result, value)
+	}
+	return result, nil
 }
 
 func writeHTTPError(w nethttp.ResponseWriter, statusCode int, message string) {
