@@ -94,6 +94,18 @@ func (uc *SpiderUseCase) fetchAndSave(userId int64, plat model.Platform, needAll
 		log.Warnf("Spider: %s %s 跳过 %d 条无效或重复提交", plat.Platform, plat.Username, skipped)
 	}
 
+	if needAll {
+		var existingCount int64
+		if err := uc.data.DB.Model(&model.SubmitLog{}).
+			Where("user_id = ? AND platform = ?", userId, plat.Platform).
+			Count(&existingCount).Error; err != nil {
+			return 0, skipped, err
+		}
+		if err := rejectIncompleteFullFetch(plat.Platform, len(tmp), existingCount, needAll); err != nil {
+			return 0, skipped, err
+		}
+	}
+
 	err = uc.data.DB.Transaction(func(tx *gorm.DB) error {
 		if needAll {
 			if err := tx.Where("user_id = ? AND platform = ?", userId, plat.Platform).Delete(&model.SubmitLog{}).Error; err != nil {
@@ -117,6 +129,18 @@ func (uc *SpiderUseCase) fetchAndSave(userId int64, plat model.Platform, needAll
 			CreateInBatches(&tmp, spiderInsertBatchSize).Error
 	})
 	return len(tmp), skipped, err
+}
+
+func rejectIncompleteFullFetch(platform string, fetchedCount int, existingCount int64, needAll bool) error {
+	if !needAll || existingCount <= 0 || int64(fetchedCount) >= existingCount {
+		return nil
+	}
+	return fmt.Errorf(
+		"%s 全量抓取结果 %d 条少于现有 %d 条，疑似平台返回不完整，已拒绝覆盖旧数据",
+		platform,
+		fetchedCount,
+		existingCount,
+	)
 }
 
 func (uc *SpiderUseCase) fetchAndSaveContest(userId int64, plat model.Platform, needAll bool) error {

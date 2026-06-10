@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -217,7 +218,7 @@ func (p NewCodeforces) FetchSubmitLog(userId int64, username string, needAll boo
 	pageSize := codeforcesPageSize
 	from := 1
 	for {
-		cfResp, err := fetchCodeforcesPage(client, codeforcesAPIBaseURL, username, from, pageSize)
+		cfResp, err := fetchCodeforcesPage(client, currentCodeforcesAPIBaseURL(), username, from, pageSize)
 		if err != nil {
 			return nil, err
 		}
@@ -229,6 +230,13 @@ func (p NewCodeforces) FetchSubmitLog(userId int64, username string, needAll boo
 		time.Sleep(300 * time.Millisecond)
 	}
 	return res, nil
+}
+
+func currentCodeforcesAPIBaseURL() string {
+	if baseURL := strings.TrimSpace(os.Getenv("CODEFORCES_API_BASE_URL")); baseURL != "" {
+		return baseURL
+	}
+	return codeforcesAPIBaseURL
 }
 
 // FetchContestLog 拉取CodeForces比赛记录

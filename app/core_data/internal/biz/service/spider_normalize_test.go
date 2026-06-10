@@ -42,3 +42,18 @@ func TestNormalizeFetchedSubmitLogsRejectsAllInvalid(t *testing.T) {
 		t.Fatal("expected all-invalid result to be rejected")
 	}
 }
+
+func TestRejectIncompleteFullFetch(t *testing.T) {
+	if err := rejectIncompleteFullFetch("CodeForces", 999, 1000, true); err == nil {
+		t.Fatal("expected incomplete full fetch to be rejected")
+	}
+	if err := rejectIncompleteFullFetch("CodeForces", 1000, 1000, true); err != nil {
+		t.Fatalf("same-size full fetch should be accepted: %v", err)
+	}
+	if err := rejectIncompleteFullFetch("CodeForces", 100, 1000, false); err != nil {
+		t.Fatalf("recent incremental fetch should be accepted: %v", err)
+	}
+	if err := rejectIncompleteFullFetch("CodeForces", 0, 0, true); err != nil {
+		t.Fatalf("first full fetch should be accepted: %v", err)
+	}
+}

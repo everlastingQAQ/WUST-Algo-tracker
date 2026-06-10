@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 )
 
@@ -90,6 +91,47 @@ func TestCodeforcesFetchSubmitLogRecentOnlyUsesSinglePage(t *testing.T) {
 	}
 	if len(logs) != 1 {
 		t.Fatalf("len(logs) = %d, want 1", len(logs))
+	}
+}
+
+func TestCodeforcesFetchSubmitLogUsesConfiguredBaseURL(t *testing.T) {
+	oldBaseURL := codeforcesAPIBaseURL
+	oldMinInterval := codeforcesMinInterval
+	oldRetryBaseDelay := codeforcesRetryBaseDelay
+	oldLastRequest := codeforcesLastRequest
+	defer func() {
+		codeforcesAPIBaseURL = oldBaseURL
+		codeforcesMinInterval = oldMinInterval
+		codeforcesRetryBaseDelay = oldRetryBaseDelay
+		codeforcesLastRequest = oldLastRequest
+		_ = os.Unsetenv("CODEFORCES_API_BASE_URL")
+	}()
+	codeforcesMinInterval = 0
+	codeforcesRetryBaseDelay = 0
+
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		_, _ = fmt.Fprint(w, `{"status":"OK","result":[
+			{"id":251,"contestId":1,"problem":{"index":"A","name":"One"},"programmingLanguage":"GNU C++20","verdict":"OK","creationTimeSeconds":1000}
+		]}`)
+	}))
+	defer server.Close()
+
+	codeforcesAPIBaseURL = "http://127.0.0.1:1/should-not-be-used"
+	if err := os.Setenv("CODEFORCES_API_BASE_URL", server.URL); err != nil {
+		t.Fatalf("Setenv returned error: %v", err)
+	}
+
+	logs, err := NewCodeforces{}.FetchSubmitLog(7, "tourist", false)
+	if err != nil {
+		t.Fatalf("FetchSubmitLog returned error: %v", err)
+	}
+	if calls != 1 {
+		t.Fatalf("calls = %d, want 1", calls)
+	}
+	if len(logs) != 1 || logs[0].SubmitID != "251" {
+		t.Fatalf("unexpected logs: %+v", logs)
 	}
 }
 
