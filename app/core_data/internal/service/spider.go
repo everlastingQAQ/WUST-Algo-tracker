@@ -23,13 +23,19 @@ import (
 )
 
 var (
-	SetForbidden    = errors.Forbidden("权限错误", "权限不允许，设置失败")
-	InternalError   = errors.InternalServer("内部错误", "内部错误，操作失败")
-	UpdateForbidden = errors.Forbidden("权限错误", "权限不允许，不允许手动申请全量更新他人数据")
-	RateLimitError  = errors.New(429, "TOO_MANY_REQUESTS", "请求过于频繁，请稍后再试")
+	SetForbidden             = errors.Forbidden("权限错误", "权限不允许，设置失败")
+	InternalError            = errors.InternalServer("内部错误", "内部错误，操作失败")
+	UpdateForbidden          = errors.Forbidden("权限错误", "权限不允许，不允许手动申请全量更新他人数据")
+	RateLimitError           = errors.New(429, "TOO_MANY_REQUESTS", "请求过于频繁，请稍后再试")
+	CodeforcesRateLimitError = errors.New(429, "TOO_MANY_REQUESTS", "Codeforces 官方 API 限流较严格，请不要频繁刷新，建议 30 分钟后再试")
 )
 
-const staleAfter = 24 * time.Hour
+const (
+	staleAfter                    = 24 * time.Hour
+	codeforcesPlatformName        = "CodeForces"
+	codeforcesManualRefreshWindow = 30 * time.Minute
+	defaultManualRefreshWindow    = 60 * time.Second
+)
 
 type SpiderService struct {
 	spider.UnimplementedSpiderServer
@@ -68,6 +74,31 @@ func (s *SpiderService) getLimiterByKey(key string, interval time.Duration) *rat
 	return actual.(*rate.Limiter)
 }
 
+func isCodeforcesPlatform(platform string) bool {
+	return strings.EqualFold(strings.TrimSpace(platform), codeforcesPlatformName)
+}
+
+func manualRefreshWindow(platform string) time.Duration {
+	if isCodeforcesPlatform(platform) {
+		return codeforcesManualRefreshWindow
+	}
+	return defaultManualRefreshWindow
+}
+
+func (s SpiderService) platformRefreshStartedWithin(userId int64, platform string, window time.Duration) bool {
+	if window <= 0 {
+		return false
+	}
+	var status model.SpiderSyncStatus
+	if err := s.db.Where("user_id = ? AND platform = ?", userId, platform).First(&status).Error; err != nil {
+		return false
+	}
+	if status.LastStartedAt == nil {
+		return false
+	}
+	return time.Since(*status.LastStartedAt) < window
+}
+
 func (s SpiderService) Update(ctx context.Context, req *spider.UpdateReq) (*spider.UpdateRes, error) {
 	//if !auth.VerifyById(ctx, uint(req.UserId)) {
 	//	return nil, UpdateForbidden
@@ -82,8 +113,18 @@ func (s SpiderService) Update(ctx context.Context, req *spider.UpdateReq) (*spid
 	if platform != "" {
 		limiterKey = fmt.Sprintf("update:%d:%s", req.UserId, platform)
 	}
-	limiter := s.getLimiterByKey(limiterKey, 60*time.Second)
+	if isCodeforcesPlatform(platform) && s.platformRefreshStartedWithin(req.UserId, platform, codeforcesManualRefreshWindow) {
+		return &spider.UpdateRes{
+			Code:    0,
+			Message: "Codeforces 官方 API 限流较严格，最近已刷新过，请 30 分钟后再试",
+			JobId:   0,
+		}, nil
+	}
+	limiter := s.getLimiterByKey(limiterKey, manualRefreshWindow(platform))
 	if !limiter.Allow() {
+		if isCodeforcesPlatform(platform) {
+			return nil, CodeforcesRateLimitError
+		}
 		return nil, RateLimitError
 	}
 	current := auth.GetCurrentUser(ctx)

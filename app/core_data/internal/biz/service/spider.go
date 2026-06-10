@@ -18,7 +18,10 @@ type SpiderUseCase struct {
 	data *data.Data
 }
 
-const spiderInsertBatchSize = 500
+const (
+	spiderInsertBatchSize       = 500
+	codeforcesRefreshSkipWindow = 30 * time.Minute
+)
 
 func NewSpiderUseCase(data *data.Data) *SpiderUseCase {
 	return &SpiderUseCase{
@@ -48,8 +51,15 @@ func (uc *SpiderUseCase) LoadData(jobId int64, userId int64, needAll bool, targe
 		uc.finishJob(jobId, "failed", err.Error())
 		return err
 	}
+	if targetPlatform == "" {
+		platforms = uc.filterRecentCodeforcesRefresh(userId, platforms)
+	}
 
 	uc.startJob(jobId, len(platforms))
+	if len(platforms) == 0 {
+		uc.finishJob(jobId, "success", "")
+		return nil
+	}
 	var failed []string
 	for _, plat := range platforms {
 		uc.setCurrentPlatform(jobId, plat.Platform)
@@ -71,6 +81,32 @@ func (uc *SpiderUseCase) LoadData(jobId int64, userId int64, needAll bool, targe
 
 	uc.finishJob(jobId, "success", "")
 	return nil
+}
+
+func (uc *SpiderUseCase) filterRecentCodeforcesRefresh(userId int64, platforms []model.Platform) []model.Platform {
+	filtered := make([]model.Platform, 0, len(platforms))
+	for _, plat := range platforms {
+		if plat.Platform == spider.CodeForces && uc.platformRefreshStartedWithin(userId, plat.Platform, codeforcesRefreshSkipWindow) {
+			log.Infof("Spider: skip CodeForces refresh for user %d, recently refreshed within %s", userId, codeforcesRefreshSkipWindow)
+			continue
+		}
+		filtered = append(filtered, plat)
+	}
+	return filtered
+}
+
+func (uc *SpiderUseCase) platformRefreshStartedWithin(userId int64, platform string, window time.Duration) bool {
+	if window <= 0 {
+		return false
+	}
+	var status model.SpiderSyncStatus
+	if err := uc.data.DB.Where("user_id = ? AND platform = ?", userId, platform).First(&status).Error; err != nil {
+		return false
+	}
+	if status.LastStartedAt == nil {
+		return false
+	}
+	return time.Since(*status.LastStartedAt) < window
 }
 
 func (uc *SpiderUseCase) fetchAndSave(userId int64, plat model.Platform, needAll bool) (int, int, error) {
