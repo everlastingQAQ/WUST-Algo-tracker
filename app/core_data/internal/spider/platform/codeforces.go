@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
@@ -20,13 +21,46 @@ import (
 type NewCodeforces struct{}
 
 var (
-	codeforcesAPIBaseURL = "https://codeforces.com/api/user.status"
-	codeforcesPageSize   = 10000
+	codeforcesAPIBaseURL      = "https://codeforces.com/api/user.status"
+	codeforcesPageSize        = 1000
+	codeforcesMaxPageAttempts = 5
+	codeforcesMinInterval     = 2200 * time.Millisecond
+	codeforcesRetryBaseDelay  = time.Second
+	codeforcesRateMu          sync.Mutex
+	codeforcesLastRequest     time.Time
 )
 
+type codeforcesAPIError struct {
+	statusCode int
+	body       string
+}
+
+func (e codeforcesAPIError) Error() string {
+	if e.statusCode > 0 {
+		return fmt.Sprintf("请求响应码错误 %d, %s", e.statusCode, e.body)
+	}
+	return fmt.Sprintf("CodeForces API 错误: %s", e.body)
+}
+
+func (e codeforcesAPIError) transient() bool {
+	if e.statusCode == 0 {
+		return true
+	}
+	if e.statusCode == http.StatusTooManyRequests ||
+		e.statusCode == http.StatusBadGateway ||
+		e.statusCode == http.StatusServiceUnavailable ||
+		e.statusCode == http.StatusGatewayTimeout {
+		return true
+	}
+	body := strings.ToLower(e.body)
+	return strings.Contains(body, "call limit exceeded") ||
+		strings.Contains(body, "temporarily unavailable")
+}
+
 type CFResponse struct {
-	Status string   `json:"status"`
-	Result []cfJson `json:"result"`
+	Status  string   `json:"status"`
+	Comment string   `json:"comment"`
+	Result  []cfJson `json:"result"`
 }
 
 type cfJson struct {
@@ -75,6 +109,25 @@ func buildCodeforcesProblemKey(sub cfJson) string {
 }
 
 func fetchCodeforcesPage(client *http.Client, baseURL string, username string, from int, count int) (CFResponse, error) {
+	var lastErr error
+	for attempt := 1; attempt <= codeforcesMaxPageAttempts; attempt++ {
+		cfResp, err := fetchCodeforcesPageOnce(client, baseURL, username, from, count)
+		if err == nil {
+			return cfResp, nil
+		}
+		lastErr = err
+		apiErr, ok := err.(codeforcesAPIError)
+		if !ok || !apiErr.transient() || attempt == codeforcesMaxPageAttempts {
+			break
+		}
+		if codeforcesRetryBaseDelay > 0 {
+			time.Sleep(time.Duration(attempt*attempt) * codeforcesRetryBaseDelay)
+		}
+	}
+	return CFResponse{}, lastErr
+}
+
+func fetchCodeforcesPageOnce(client *http.Client, baseURL string, username string, from int, count int) (CFResponse, error) {
 	u, err := url.Parse(baseURL)
 	if err != nil {
 		return CFResponse{}, err
@@ -91,15 +144,16 @@ func fetchCodeforcesPage(client *http.Client, baseURL string, username string, f
 	}
 	req.Header.Set("User-Agent", "WUST-ACM-Tracker/1.1 (+https://github.com/WUSTACM/WUST-Algo-tracker)")
 
+	waitCodeforcesRateLimit()
 	resp, err := client.Do(req)
 	if err != nil {
-		return CFResponse{}, fmt.Errorf("发起http请求失败: %s", err.Error())
+		return CFResponse{}, codeforcesAPIError{body: fmt.Sprintf("发起http请求失败: %s", err.Error())}
 	}
 	defer resp.Body.Close()
 	// 校验状态码
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return CFResponse{}, fmt.Errorf("请求响应码错误 %d, %s", resp.StatusCode, string(body))
+		return CFResponse{}, codeforcesAPIError{statusCode: resp.StatusCode, body: strings.TrimSpace(string(body))}
 	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -113,9 +167,28 @@ func fetchCodeforcesPage(client *http.Client, baseURL string, username string, f
 	}
 
 	if cfResp.Status != "OK" {
-		return CFResponse{}, fmt.Errorf("API status error: %s", cfResp.Status)
+		comment := strings.TrimSpace(cfResp.Comment)
+		if comment == "" {
+			comment = cfResp.Status
+		}
+		return CFResponse{}, codeforcesAPIError{body: fmt.Sprintf("API status error: %s, %s", cfResp.Status, comment)}
 	}
 	return cfResp, nil
+}
+
+func waitCodeforcesRateLimit() {
+	if codeforcesMinInterval <= 0 {
+		return
+	}
+	codeforcesRateMu.Lock()
+	defer codeforcesRateMu.Unlock()
+
+	if !codeforcesLastRequest.IsZero() {
+		if wait := codeforcesMinInterval - time.Since(codeforcesLastRequest); wait > 0 {
+			time.Sleep(wait)
+		}
+	}
+	codeforcesLastRequest = time.Now()
 }
 
 func codeforcesRowsToSubmitLogs(userId int64, rows []cfJson) []model.SubmitLog {
@@ -142,9 +215,6 @@ func (p NewCodeforces) FetchSubmitLog(userId int64, username string, needAll boo
 	}
 	client := &http.Client{Timeout: 30 * time.Second}
 	pageSize := codeforcesPageSize
-	if !needAll {
-		pageSize = 1000
-	}
 	from := 1
 	for {
 		cfResp, err := fetchCodeforcesPage(client, codeforcesAPIBaseURL, username, from, pageSize)

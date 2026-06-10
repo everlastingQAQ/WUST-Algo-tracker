@@ -154,6 +154,10 @@ func (uc *SpiderUseCase) loadOnePlatform(userId int64, plat model.Platform, need
 	uc.markPlatformRunning(userId, plat)
 	// 限制最大重试次数
 	maxRetries := 12
+	if plat.Platform == spider.CodeForces {
+		// CodeForces 抓取器内部已经做了限速和瞬时错误重试，外层再循环会放大 429/502。
+		maxRetries = 1
+	}
 	var lastErr error
 	for i := 0; i < maxRetries; i++ {
 		count, skipped, err := uc.fetchAndSave(userId, plat, needAll)

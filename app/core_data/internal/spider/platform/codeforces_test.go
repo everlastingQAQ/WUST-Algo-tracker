@@ -10,12 +10,20 @@ import (
 func TestCodeforcesFetchSubmitLogPaginatesNeedAll(t *testing.T) {
 	oldBaseURL := codeforcesAPIBaseURL
 	oldPageSize := codeforcesPageSize
+	oldMinInterval := codeforcesMinInterval
+	oldRetryBaseDelay := codeforcesRetryBaseDelay
+	oldLastRequest := codeforcesLastRequest
 	defer func() {
 		codeforcesAPIBaseURL = oldBaseURL
 		codeforcesPageSize = oldPageSize
+		codeforcesMinInterval = oldMinInterval
+		codeforcesRetryBaseDelay = oldRetryBaseDelay
+		codeforcesLastRequest = oldLastRequest
 	}()
 
 	codeforcesPageSize = 2
+	codeforcesMinInterval = 0
+	codeforcesRetryBaseDelay = 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("handle") != "jiangly" {
 			t.Fatalf("handle = %q", r.URL.Query().Get("handle"))
@@ -51,7 +59,17 @@ func TestCodeforcesFetchSubmitLogPaginatesNeedAll(t *testing.T) {
 
 func TestCodeforcesFetchSubmitLogRecentOnlyUsesSinglePage(t *testing.T) {
 	oldBaseURL := codeforcesAPIBaseURL
-	defer func() { codeforcesAPIBaseURL = oldBaseURL }()
+	oldMinInterval := codeforcesMinInterval
+	oldRetryBaseDelay := codeforcesRetryBaseDelay
+	oldLastRequest := codeforcesLastRequest
+	defer func() {
+		codeforcesAPIBaseURL = oldBaseURL
+		codeforcesMinInterval = oldMinInterval
+		codeforcesRetryBaseDelay = oldRetryBaseDelay
+		codeforcesLastRequest = oldLastRequest
+	}()
+	codeforcesMinInterval = 0
+	codeforcesRetryBaseDelay = 0
 
 	calls := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -72,6 +90,49 @@ func TestCodeforcesFetchSubmitLogRecentOnlyUsesSinglePage(t *testing.T) {
 	}
 	if len(logs) != 1 {
 		t.Fatalf("len(logs) = %d, want 1", len(logs))
+	}
+}
+
+func TestCodeforcesFetchSubmitLogRetriesTransientGatewayErrors(t *testing.T) {
+	oldBaseURL := codeforcesAPIBaseURL
+	oldMinInterval := codeforcesMinInterval
+	oldMaxAttempts := codeforcesMaxPageAttempts
+	oldRetryBaseDelay := codeforcesRetryBaseDelay
+	oldLastRequest := codeforcesLastRequest
+	defer func() {
+		codeforcesAPIBaseURL = oldBaseURL
+		codeforcesMinInterval = oldMinInterval
+		codeforcesMaxPageAttempts = oldMaxAttempts
+		codeforcesRetryBaseDelay = oldRetryBaseDelay
+		codeforcesLastRequest = oldLastRequest
+	}()
+	codeforcesMinInterval = 0
+	codeforcesMaxPageAttempts = 3
+	codeforcesRetryBaseDelay = 0
+
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if calls < 3 {
+			http.Error(w, "error code: 502", http.StatusBadGateway)
+			return
+		}
+		_, _ = fmt.Fprint(w, `{"status":"OK","result":[
+			{"id":301,"contestId":1,"problem":{"index":"A","name":"One"},"programmingLanguage":"GNU C++20","verdict":"OK","creationTimeSeconds":1000}
+		]}`)
+	}))
+	defer server.Close()
+	codeforcesAPIBaseURL = server.URL
+
+	logs, err := NewCodeforces{}.FetchSubmitLog(7, "tourist", false)
+	if err != nil {
+		t.Fatalf("FetchSubmitLog returned error: %v", err)
+	}
+	if calls != 3 {
+		t.Fatalf("calls = %d, want 3", calls)
+	}
+	if len(logs) != 1 || logs[0].SubmitID != "301" {
+		t.Fatalf("unexpected logs: %+v", logs)
 	}
 }
 
