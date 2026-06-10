@@ -16,3 +16,12 @@ func TestManualRefreshWindowUsesLongerCodeforcesCooldown(t *testing.T) {
 		t.Fatalf("default cooldown = %s, want 1m", got)
 	}
 }
+
+func TestSamePlatformUsernameTreatsCodeforcesCaseInsensitive(t *testing.T) {
+	if !samePlatformUsername("CodeForces", "Tourist", "tourist") {
+		t.Fatal("CodeForces username comparison should be case-insensitive")
+	}
+	if samePlatformUsername("AtCoder", "Tourist", "tourist") {
+		t.Fatal("non-CodeForces username comparison should keep exact matching")
+	}
+}

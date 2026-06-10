@@ -53,6 +53,11 @@ func (uc *SpiderUseCase) LoadData(jobId int64, userId int64, needAll bool, targe
 	}
 	if targetPlatform == "" {
 		platforms = uc.filterRecentCodeforcesRefresh(userId, platforms)
+	} else if len(platforms) > 0 && uc.shouldSkipRecentCodeforcesRefresh(userId, platforms[0]) {
+		log.Infof("Spider: skip direct CodeForces refresh for user %d, recently refreshed within %s", userId, codeforcesRefreshSkipWindow)
+		uc.startJob(jobId, 0)
+		uc.finishJob(jobId, "success", "")
+		return nil
 	}
 
 	uc.startJob(jobId, len(platforms))
@@ -86,13 +91,18 @@ func (uc *SpiderUseCase) LoadData(jobId int64, userId int64, needAll bool, targe
 func (uc *SpiderUseCase) filterRecentCodeforcesRefresh(userId int64, platforms []model.Platform) []model.Platform {
 	filtered := make([]model.Platform, 0, len(platforms))
 	for _, plat := range platforms {
-		if plat.Platform == spider.CodeForces && uc.platformRefreshStartedWithin(userId, plat.Platform, codeforcesRefreshSkipWindow) {
+		if uc.shouldSkipRecentCodeforcesRefresh(userId, plat) {
 			log.Infof("Spider: skip CodeForces refresh for user %d, recently refreshed within %s", userId, codeforcesRefreshSkipWindow)
 			continue
 		}
 		filtered = append(filtered, plat)
 	}
 	return filtered
+}
+
+func (uc *SpiderUseCase) shouldSkipRecentCodeforcesRefresh(userId int64, plat model.Platform) bool {
+	return strings.EqualFold(strings.TrimSpace(plat.Platform), spider.CodeForces) &&
+		uc.platformRefreshStartedWithin(userId, plat.Platform, codeforcesRefreshSkipWindow)
 }
 
 func (uc *SpiderUseCase) platformRefreshStartedWithin(userId int64, platform string, window time.Duration) bool {

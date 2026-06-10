@@ -78,6 +78,15 @@ func isCodeforcesPlatform(platform string) bool {
 	return strings.EqualFold(strings.TrimSpace(platform), codeforcesPlatformName)
 }
 
+func samePlatformUsername(platform string, current string, next string) bool {
+	current = strings.TrimSpace(current)
+	next = strings.TrimSpace(next)
+	if isCodeforcesPlatform(platform) {
+		return strings.EqualFold(current, next)
+	}
+	return current == next
+}
+
 func manualRefreshWindow(platform string) time.Duration {
 	if isCodeforcesPlatform(platform) {
 		return codeforcesManualRefreshWindow
@@ -468,16 +477,32 @@ func (s SpiderService) SetSpider(ctx context.Context, req *spider.SetSpiderReq) 
 	if !auth.VerifySelfOrAbove(ctx, uint(req.UserId)) {
 		return nil, SetForbidden
 	}
+	req.Platform = strings.TrimSpace(req.Platform)
+	req.Username = strings.TrimSpace(req.Username)
 	// Rate limit
 	limiter := s.getLimiter(req.UserId, 30*time.Second)
 	if !limiter.Allow() {
 		return nil, RateLimitError
+	}
+	var existing model.Platform
+	hasExistingBinding := s.db.Where("user_id = ? AND platform = ?", req.UserId, req.Platform).First(&existing).Error == nil
+	isSameBinding := hasExistingBinding && samePlatformUsername(req.Platform, existing.Username, req.Username)
+	if isCodeforcesPlatform(req.Platform) && isSameBinding && s.platformRefreshStartedWithin(req.UserId, req.Platform, codeforcesManualRefreshWindow) {
+		return &spider.SetSpiderRep{
+			Code:    0,
+			Message: "Codeforces 官方 API 限流较严格，该账号最近已刷新过，请 30 分钟后再试",
+		}, nil
 	}
 	// 直接设置进去 构建Platform
 	platform := model.Platform{
 		UserID:   req.UserId,
 		Platform: req.Platform,
 		Username: req.Username,
+	}
+	if isCodeforcesPlatform(req.Platform) && hasExistingBinding && !isSameBinding {
+		if err := s.db.Where("user_id = ? AND platform = ?", req.UserId, req.Platform).Delete(&model.SpiderSyncStatus{}).Error; err != nil {
+			log.Errorf("SetSpider: delete Codeforces sync status failed: %v", err)
+		}
 	}
 	if err := s.db.Where("user_id = ? AND platform = ?", req.UserId, req.Platform).Delete(&model.Platform{}).Error; err != nil {
 		log.Errorf("SetSpider: delete platform failed: %v", err)
