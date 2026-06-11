@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"math"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-kratos/kratos/v2/errors"
@@ -180,6 +181,63 @@ const statisticAcSQL = "(status ILIKE '%AC%' OR status ILIKE '%正确%' OR statu
 const statisticProblemKeySQL = "platform || '|' || COALESCE(NULLIF(BTRIM(problem), ''), submit_id)"
 const statisticStaleAfter = 24 * time.Hour
 const achievementGlobalSnapshotTTL = 30 * time.Minute
+const featureSnapshotRetention = 30 * 24 * time.Hour
+const featureSnapshotCleanupInterval = time.Hour
+const featureSnapshotMaxRows = int64(5000)
+const featureSnapshotKeepRows = int64(3000)
+
+var featureSnapshotCleanupMu sync.Mutex
+var featureSnapshotLastCleanup time.Time
+
+func (s *StatisticService) cleanupExpiredFeatureSnapshots(ctx context.Context) {
+	now := time.Now()
+	featureSnapshotCleanupMu.Lock()
+	if now.Sub(featureSnapshotLastCleanup) < featureSnapshotCleanupInterval {
+		featureSnapshotCleanupMu.Unlock()
+		return
+	}
+	featureSnapshotLastCleanup = now
+	featureSnapshotCleanupMu.Unlock()
+
+	cutoff := now.Add(-featureSnapshotRetention)
+	expiredResult := s.data.DB.
+		Where("user_id > 0 AND kind IN ? AND generated_at < ?", []string{"weekly_report", "achievement"}, cutoff).
+		Delete(&model.FeatureSnapshot{})
+	deletedExpired := expiredResult.RowsAffected
+
+	var totalRows int64
+	if err := s.data.DB.Model(&model.FeatureSnapshot{}).
+		Where("user_id > 0 AND kind IN ?", []string{"weekly_report", "achievement"}).
+		Count(&totalRows).Error; err != nil {
+		return
+	}
+
+	deletedOverflow := int64(0)
+	if totalRows > featureSnapshotMaxRows {
+		overflow := totalRows - featureSnapshotKeepRows
+		if overflow > 0 {
+			var ids []uint
+			if err := s.data.DB.Model(&model.FeatureSnapshot{}).
+				Where("user_id > 0 AND kind IN ?", []string{"weekly_report", "achievement"}).
+				Order("generated_at ASC").
+				Limit(int(overflow)).
+				Pluck("id", &ids).Error; err == nil && len(ids) > 0 {
+				result := s.data.DB.Where("id IN ?", ids).Delete(&model.FeatureSnapshot{})
+				deletedOverflow = result.RowsAffected
+			}
+		}
+	}
+
+	if deletedExpired > 0 || deletedOverflow > 0 {
+		recordCoreOperation(ctx, s.data.DB, "snapshot.cleanup", "feature_snapshot", 0, map[string]any{
+			"retentionDays":   int(featureSnapshotRetention.Hours() / 24),
+			"maxRows":         featureSnapshotMaxRows,
+			"keepRows":        featureSnapshotKeepRows,
+			"deletedExpired":  deletedExpired,
+			"deletedOverflow": deletedOverflow,
+		})
+	}
+}
 
 func (s *StatisticService) Explanation() StatisticExplanation {
 	return StatisticExplanation{
@@ -928,6 +986,7 @@ func (s *StatisticService) buildAchievementGlobalSnapshot() (*AchievementGlobalS
 }
 
 func (s *StatisticService) GetAchievementGlobalSnapshot(ctx context.Context) (*AchievementGlobalSnapshot, error) {
+	s.cleanupExpiredFeatureSnapshots(ctx)
 	var snapshot model.FeatureSnapshot
 	err := s.data.DB.Where("user_id = ? AND kind = ?", -1, "achievement_global").First(&snapshot).Error
 	if err == nil && time.Since(snapshot.GeneratedAt) < achievementGlobalSnapshotTTL && json.Valid([]byte(snapshot.Payload)) {
@@ -973,6 +1032,7 @@ func normalizeSnapshotKind(kind string) (string, error) {
 }
 
 func (s *StatisticService) GetFeatureSnapshot(ctx context.Context, userId int64, kind string, sourceHash string) (*FeatureSnapshotResponse, error) {
+	s.cleanupExpiredFeatureSnapshots(ctx)
 	if userId <= 0 {
 		return nil, errors.BadRequest("参数错误", "userId不能为空")
 	}
@@ -1019,6 +1079,7 @@ func (s *StatisticService) GetFeatureSnapshot(ctx context.Context, userId int64,
 }
 
 func (s *StatisticService) SaveFeatureSnapshot(ctx context.Context, req SaveFeatureSnapshotRequest) (*FeatureSnapshotResponse, error) {
+	s.cleanupExpiredFeatureSnapshots(ctx)
 	if req.UserID <= 0 {
 		return nil, errors.BadRequest("参数错误", "userId不能为空")
 	}

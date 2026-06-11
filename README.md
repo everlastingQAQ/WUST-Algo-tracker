@@ -41,8 +41,10 @@ v1.1.5 聚焦运维可观测、统计解释和性能配合：
 - 操作日志：新增核心数据服务操作日志查询接口 `/v1/core/operation-logs`。
 - 功能快照：新增 `feature_snapshots` 表和 `/v1/core/snapshot` 读写接口，支持 `weekly_report`、`achievement`。
 - 全站成就快照：新增 `/v1/core/achievement/global-snapshot`，后端聚合成就解锁比例和站内百分位上下文，前端不再遍历全站用户计算。
+- 快照清理：功能快照作为可再生成缓存保留 30 天，超过 5000 行时自动保留最近 3000 行并写入运维日志。
 - 统计解释：统计口径说明补充平台明细、重爬队列和大型账号分批写入说明。
 - 抓取审计：Codeforces、洛谷、牛客、QOJ、AtCoder 审计说明进一步解释和 OJ 主页不一致的常见原因。
+- 备份保护：发布脚本会自动清理过期备份；备份目录超过默认 2048MiB 时会提示管理员并继续删除旧备份。
 - 后台配合：前端 v1.1.5 在系统设置页合并展示服务状态、抓取任务、缓存状态、抓取审计和操作日志。
 
 ## v1.1.3 更新
@@ -188,6 +190,10 @@ bash deploy/scripts/deploy-release.sh
 
 - `FRONTEND_DIR=/opt/wust-algo/frontend`：前端仓库路径，默认使用 `${APP_ROOT}/frontend`。
 - `BACKUP_ROOT=/opt/wust-algo/backups`：发布备份目录。
+- `BACKUP_RETENTION_DAYS=14`：发布备份和手动前端备份的默认保留天数。
+- `BACKUP_KEEP_RECENT=10`：无论是否超过保留天数，至少保留最近多少份备份。
+- `BACKUP_MAX_SIZE_MB=2048`：备份目录超过该大小时，脚本会提示管理员并自动删除更旧备份。
+- `BACKUP_EMERGENCY_KEEP_RECENT=5`：容量超限自动清理时，至少保留最近多少份发布备份和前端备份。
 - `HEALTH_URL=http://127.0.0.1:8088/`：发布后的健康检查地址。
 - `SUDO_PASSWORD=...`：非交互环境可用它提前完成 `sudo` 认证；交互终端不需要设置。
 
