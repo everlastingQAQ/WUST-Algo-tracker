@@ -55,6 +55,17 @@ It then builds and installs these systemd services:
 - `wust-gateway`
 - `wust-agent` when `ENABLE_AGENT=1`
 
+## Preflight Before Full Release
+
+On servers that have both backend and frontend repositories in place, run preflight before a routine release:
+
+```bash
+cd /opt/wust-algo/tracker
+bash deploy/scripts/preflight.sh
+```
+
+The preflight script checks required commands, key environment variables, deployment directory permissions, the frontend repository path, and common port conflicts before the release modifies running services. `deploy/scripts/deploy-release.sh` runs it automatically.
+
 ## Re-Deploy Backend After Code Changes
 
 ```bash

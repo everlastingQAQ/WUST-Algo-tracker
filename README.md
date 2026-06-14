@@ -175,7 +175,7 @@ bash deploy/scripts/deploy-frontend.sh
 
 ### 7. 标准发布流程
 
-日常迭代建议使用一键发布脚本，它会先备份当前 `bin/conf/dist/systemd/nginx`，再依次部署后端、部署前端、检查 systemd、检查 Nginx 和首页 HTTP 状态：
+日常迭代建议使用一键发布脚本，它会先运行 preflight 检查部署命令、关键环境变量、目录权限和前端仓库路径，再备份当前 `bin/conf/dist/systemd/nginx`，依次部署后端、部署前端、检查 systemd、检查 Nginx 和首页 HTTP 状态：
 
 ```bash
 cd /opt/wust-algo/tracker
@@ -183,8 +183,11 @@ git pull
 cd /opt/wust-algo/frontend
 git pull
 cd /opt/wust-algo/tracker
+bash deploy/scripts/preflight.sh
 bash deploy/scripts/deploy-release.sh
 ```
+
+`deploy-release.sh` 会自动执行同一组 preflight 检查；单独运行 `preflight.sh` 适合在正式发布前提前定位环境变量、端口占用或目录权限问题。
 
 可选环境变量：
 

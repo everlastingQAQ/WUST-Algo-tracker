@@ -94,7 +94,7 @@ func manualRefreshWindow(platform string) time.Duration {
 	return defaultManualRefreshWindow
 }
 
-func (s SpiderService) platformRefreshStartedWithin(userId int64, platform string, window time.Duration) bool {
+func (s *SpiderService) platformRefreshStartedWithin(userId int64, platform string, window time.Duration) bool {
 	if window <= 0 {
 		return false
 	}
@@ -108,7 +108,7 @@ func (s SpiderService) platformRefreshStartedWithin(userId int64, platform strin
 	return time.Since(*status.LastStartedAt) < window
 }
 
-func (s SpiderService) Update(ctx context.Context, req *spider.UpdateReq) (*spider.UpdateRes, error) {
+func (s *SpiderService) Update(ctx context.Context, req *spider.UpdateReq) (*spider.UpdateRes, error) {
 	//if !auth.VerifyById(ctx, uint(req.UserId)) {
 	//	return nil, UpdateForbidden
 	//}
@@ -168,7 +168,7 @@ func (s SpiderService) Update(ctx context.Context, req *spider.UpdateReq) (*spid
 	}, nil
 }
 
-func (s SpiderService) GetSpider(ctx context.Context, req *spider.GetSpiderReq) (*spider.GetSpiderRep, error) {
+func (s *SpiderService) GetSpider(ctx context.Context, req *spider.GetSpiderReq) (*spider.GetSpiderRep, error) {
 	var plats []model.Platform
 	err := s.db.Where("user_id = ?", req.UserId).Find(&plats).Error
 	if err != nil {
@@ -240,7 +240,7 @@ func jobToPb(job model.SpiderRefreshJob, canViewError bool) *spider.JobInfo {
 	}
 }
 
-func (s SpiderService) Job(ctx context.Context, req *spider.JobReq) (*spider.JobRes, error) {
+func (s *SpiderService) Job(ctx context.Context, req *spider.JobReq) (*spider.JobRes, error) {
 	if req.JobId <= 0 {
 		return nil, errors.BadRequest("参数错误", "jobId不能为空")
 	}
@@ -258,7 +258,7 @@ func (s SpiderService) Job(ctx context.Context, req *spider.JobReq) (*spider.Job
 	}, nil
 }
 
-func (s SpiderService) Jobs(ctx context.Context, req *spider.JobsReq) (*spider.JobsRes, error) {
+func (s *SpiderService) Jobs(ctx context.Context, req *spider.JobsReq) (*spider.JobsRes, error) {
 	page := req.Page
 	if page <= 0 {
 		page = 1
@@ -311,7 +311,7 @@ func (s SpiderService) Jobs(ctx context.Context, req *spider.JobsReq) (*spider.J
 	}, nil
 }
 
-func (s SpiderService) Retry(ctx context.Context, jobId int64) (*RetryJobReply, error) {
+func (s *SpiderService) Retry(ctx context.Context, jobId int64) (*RetryJobReply, error) {
 	if jobId <= 0 {
 		return nil, errors.BadRequest("参数错误", "jobId不能为空")
 	}
@@ -356,7 +356,7 @@ func (s SpiderService) Retry(ctx context.Context, jobId int64) (*RetryJobReply, 
 	}, nil
 }
 
-func (s SpiderService) RebuildAll(ctx context.Context) (*RebuildAllReply, error) {
+func (s *SpiderService) RebuildAll(ctx context.Context) (*RebuildAllReply, error) {
 	current := auth.GetCurrentUser(ctx)
 	if current == nil {
 		return nil, errors.Unauthorized("未登录", "请先登录")
@@ -402,7 +402,7 @@ func (s SpiderService) RebuildAll(ctx context.Context) (*RebuildAllReply, error)
 	return reply, nil
 }
 
-func (s SpiderService) Status(ctx context.Context, req *spider.StatusReq) (*spider.StatusRes, error) {
+func (s *SpiderService) Status(ctx context.Context, req *spider.StatusReq) (*spider.StatusRes, error) {
 	if req.UserId <= 0 {
 		return nil, errors.BadRequest("参数错误", "userId不能为空")
 	}
@@ -472,7 +472,7 @@ func (s SpiderService) Status(ctx context.Context, req *spider.StatusReq) (*spid
 	}, nil
 }
 
-func (s SpiderService) SetSpider(ctx context.Context, req *spider.SetSpiderReq) (*spider.SetSpiderRep, error) {
+func (s *SpiderService) SetSpider(ctx context.Context, req *spider.SetSpiderReq) (*spider.SetSpiderRep, error) {
 	// 校验JWT：只能设置自己的 spider，或者管理员可以设置任何人
 	if !auth.VerifySelfOrAbove(ctx, uint(req.UserId)) {
 		return nil, SetForbidden
@@ -528,7 +528,7 @@ func (s SpiderService) SetSpider(ctx context.Context, req *spider.SetSpiderReq) 
 	}, nil
 }
 
-func (s SpiderService) invalidateUserStatisticCache(ctx context.Context, userId int64) {
+func (s *SpiderService) invalidateUserStatisticCache(ctx context.Context, userId int64) {
 	if err := s.rdb.Del(
 		ctx,
 		fmt.Sprintf("core:submit_log:user:%d", userId),

@@ -19,6 +19,9 @@ HEALTH_URL="${HEALTH_URL:-http://${DOMAIN:-127.0.0.1}:${NGINX_PORT:-8088}/}"
 STAMP="$(date +%Y%m%d%H%M%S)"
 BACKUP_DIR="${BACKUP_ROOT}/release-${STAMP}"
 
+echo "Running preflight checks..."
+bash "${script_dir}/preflight.sh"
+
 require_command curl
 require_command docker
 require_command envsubst

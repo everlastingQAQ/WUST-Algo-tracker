@@ -48,6 +48,35 @@ api:
 # build
 build:
 	mkdir -p bin/ && go build -ldflags "-X main.Version=$(VERSION)" -o ./bin/ ./...
+	cd app/gateway && go build -o ../../bin/gateway ./cmd/gateway
+
+.PHONY: test
+# run tests
+test:
+	go test ./...
+	cd app/gateway && go test ./...
+
+.PHONY: vet
+# run go vet
+vet:
+	go vet ./...
+	cd app/gateway && go vet ./...
+
+.PHONY: ci
+# run local CI checks
+ci: test vet build
+
+.PHONY: clean
+# remove build artifacts
+clean:
+	rm -rf bin
+	@if [ -e dist ]; then \
+		if [ -w dist ]; then \
+			rm -rf dist; \
+		else \
+			echo "skip dist: permission denied; remove it with sudo or fix ownership"; \
+		fi; \
+	fi
 
 .PHONY: generate
 # generate

@@ -30,6 +30,10 @@ type SummaryUseCase struct {
 	mailConf *conf.SMTP
 	reg      *registry.Registrar
 	redis    *redis.Client
+
+	now                    func() time.Time
+	userProfileFn          func(userId int64) *profile2.GetByIdRes
+	weeklyReportForCoachFn func(coachUserId int64) error
 }
 
 func NewSummaryUseCase(chat *agent.Chat, mailConf *conf.SMTP, reg *discovery.Register, redis *data.Data) *SummaryUseCase {
@@ -49,22 +53,22 @@ func (uc *SummaryUseCase) PersonalLastDay(userId int64) error {
 	}
 	chat := uc.chat
 	// 获取昨天日期
-	lastDay := time.Now()
+	lastDay := uc.currentTime()
 	lastDay = lastDay.AddDate(0, 0, -1)
 	roleId := uc.checkRoleId(userId)
 	// RoleID=2（教练）：周一发周报，其他日期跳过
 	// RoleID=1（管理员）：发日报 + 周一额外发周报（日报+周报双轨）
 	// RoleID=0（普通用户）：只发日报
 	if roleId == 2 {
-		if time.Now().Weekday() == time.Monday {
-			return uc.WeeklyReportForCoach(userId)
+		if uc.currentTime().Weekday() == time.Monday {
+			return uc.weeklyReportForCoach(userId)
 		}
 		return nil
 	}
 	if roleId == 1 {
-		if time.Now().Weekday() == time.Monday {
+		if uc.currentTime().Weekday() == time.Monday {
 			// 管理员周一同时发日报 + 周报
-			if err := uc.WeeklyReportForCoach(userId); err != nil {
+			if err := uc.weeklyReportForCoach(userId); err != nil {
 				log.Errorf("管理员 %d 周报发送失败: %v", userId, err)
 			}
 		}
@@ -199,8 +203,25 @@ func (uc *SummaryUseCase) userRPC() (*grpc2.ClientConn, error) {
 	)
 }
 
+func (uc *SummaryUseCase) currentTime() time.Time {
+	if uc.now != nil {
+		return uc.now()
+	}
+	return time.Now()
+}
+
+func (uc *SummaryUseCase) weeklyReportForCoach(coachUserId int64) error {
+	if uc.weeklyReportForCoachFn != nil {
+		return uc.weeklyReportForCoachFn(coachUserId)
+	}
+	return uc.WeeklyReportForCoach(coachUserId)
+}
+
 // userProfile 获取用户完整profile（内部复用RPC）
 func (uc *SummaryUseCase) userProfile(userId int64) *profile2.GetByIdRes {
+	if uc.userProfileFn != nil {
+		return uc.userProfileFn(userId)
+	}
 	conn, err := uc.userRPC()
 	if err != nil {
 		return nil

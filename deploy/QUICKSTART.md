@@ -84,10 +84,12 @@ git pull
 cd /opt/wust-algo/frontend
 git pull
 cd /opt/wust-algo/tracker
+bash deploy/scripts/preflight.sh
 bash deploy/scripts/deploy-release.sh
 ```
 
-The wrapper creates a backup under `/opt/wust-algo/backups`, deploys backend and frontend, reloads services, tests Nginx, and checks the configured health URL.
+The wrapper runs the same preflight checks automatically, creates a backup under `/opt/wust-algo/backups`, deploys backend and frontend, reloads services, tests Nginx, and checks the configured health URL.
+Run `deploy/scripts/preflight.sh` by itself when you want to verify commands, required environment variables, writable deployment directories, frontend path, and obvious port conflicts before a release window.
 
 ## 5. Create First Admin
 
